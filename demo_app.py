@@ -5,8 +5,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import random
-import re
 import os
+import json
 from typing import Dict, List, Tuple, Optional
 
 # LLM Integration
@@ -47,7 +47,7 @@ class LLMProcessor:
             if os.getenv("DEMO_MODE", "false").lower() == "true":
                 self.demo_mode = True
                 self.available = True
-                print("✅ LLM initialized in DEMO MODE (rule-based responses)")
+                print("✅ LLM initialized in DEMO MODE (enhanced rule-based responses)")
                 return
             
             # Get configuration from environment
@@ -68,7 +68,7 @@ class LLMProcessor:
                 
             # Test the connection
             test_response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo" if not base_url else "kaz-22a",
+                model="kaz-22a",
                 messages=[{"role": "user", "content": "Hello"}],
                 max_tokens=5
             )
@@ -82,11 +82,139 @@ class LLMProcessor:
             self.demo_mode = True
             self.available = True
     
-    def _demo_process_query(self, query: str) -> Dict:
-        """Rule-based query processing for demo mode"""
+    def get_available_functions(self):
+        """Define available functions for the LLM to call"""
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": "analyze_sales_trend",
+                    "description": "Analyze sales trends over time for specific drugs or all drugs",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "drug_name": {
+                                "type": "string",
+                                "description": "Name of the drug to analyze (optional). Available: Aspirin, Ibuprofen, Medication X, Allergy Relief, Blood Pressure Med, Diabetes Control, Antibiotic Plus, Vitamin D3"
+                            },
+                            "region": {
+                                "type": "string",
+                                "description": "Region to filter by (optional). Available: North America, Europe, Asia, South America"
+                            }
+                        }
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "compare_drugs",
+                    "description": "Compare performance between different drugs",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "region": {
+                                "type": "string",
+                                "description": "Region to filter comparison by (optional). Available: North America, Europe, Asia, South America"
+                            }
+                        }
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "regional_analysis",
+                    "description": "Analyze sales performance by region",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "drug_name": {
+                                "type": "string",
+                                "description": "Name of the drug to analyze by region (optional)"
+                            }
+                        }
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "generate_auto_insights",
+                    "description": "Generate automatic insights and interesting findings from all available data",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {}
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "answer_direct_question",
+                    "description": "Answer direct questions about specific data points like 'what is our best seller', 'total revenue', etc.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "question": {
+                                "type": "string",
+                                "description": "The direct question being asked"
+                            }
+                        }
+                    }
+                }
+            }
+        ]
+    
+    def _demo_function_calling(self, query: str) -> Dict:
+        """Enhanced demo mode with intelligent function calling simulation"""
         query_lower = query.lower()
         
-        # Drug name detection
+        # Conversational responses (no function calling) - using word boundaries
+        if any(f" {greeting} " in f" {query_lower} " for greeting in ["hello", "hi", "hey"]) or any(phrase in query_lower for phrase in ["good morning", "good afternoon"]):
+            return {
+                "type": "conversational",
+                "response": "Hello! I'm your healthcare AI assistant. I can help you analyze sales data, create visualizations, and provide business insights. What would you like to know about today?"
+            }
+        
+        if any(phrase in query_lower for phrase in ["how are you", "how's it going", "what's up"]):
+            return {
+                "type": "conversational", 
+                "response": "I'm doing great, thank you for asking! I'm here to help you with healthcare sales analysis. I can show you trends, compare drug performance, analyze regional data, or answer specific questions about your business. What would you like to explore?"
+            }
+        
+        if any(phrase in query_lower for phrase in ["what can you do", "what can you help", "how can you help", "what are your capabilities"]):
+            return {
+                "type": "conversational",
+                "response": """I can help you with several types of healthcare sales analysis:
+
+📊 **Sales Trend Analysis** - Track how drugs perform over time
+🔍 **Drug Comparisons** - Compare performance between different medications  
+🌍 **Regional Analysis** - See how different regions are performing
+💡 **Business Insights** - Get automatic insights and interesting findings
+❓ **Direct Questions** - Answer specific questions like "What's our best seller?"
+
+Try asking something like:
+• "Show me sales trends for Aspirin"
+• "Compare drug performance" 
+• "Which is our best selling drug?"
+• "Tell me something interesting about our business"
+"""
+            }
+        
+        if any(phrase in query_lower for phrase in ["thank you", "thanks", "appreciate"]):
+            return {
+                "type": "conversational",
+                "response": "You're welcome! I'm always here to help with your healthcare data analysis needs. Feel free to ask me anything about sales trends, drug performance, or business insights!"
+            }
+        
+        if any(phrase in query_lower for phrase in ["goodbye", "bye", "see you", "farewell"]):
+            return {
+                "type": "conversational", 
+                "response": "Goodbye! It was great helping you with your healthcare data analysis. Come back anytime you need insights into your sales performance!"
+            }
+        
+        # Function calling logic for business queries
         drugs = ["aspirin", "ibuprofen", "medication x", "allergy relief", 
                 "blood pressure med", "diabetes control", "antibiotic plus", "vitamin d3"]
         regions = ["north america", "europe", "asia", "south america"]
@@ -104,133 +232,244 @@ class LLMProcessor:
                 detected_region = region.title()
                 break
         
-        # Intent detection based on keywords
-        if any(word in query_lower for word in ["trend", "sales", "performance", "over time"]):
+        # Direct questions
+        if (any(phrase in query_lower for phrase in ["best seller", "top performer", "highest sales", "worst seller", "total sales", "revenue", "how much", "how many"]) or 
+            ("which" in query_lower and any(word in query_lower for word in ["best", "top", "highest", "lowest", "worst"])) or
+            ("what" in query_lower and any(word in query_lower for word in ["best", "top", "highest", "total"]))):
             return {
-                'intent': 'SALES_TREND_ANALYSIS',
-                'entities': {'drug': detected_drug, 'region': detected_region},
-                'confidence': 0.8,
-                'llm_response': f"I'll analyze the sales trend for {detected_drug or 'all drugs'}" + 
-                              (f" in {detected_region}" if detected_region else ""),
-                'needs_data_analysis': True
+                "type": "function_call",
+                "function_name": "answer_direct_question",
+                "function_args": {"question": query},
+                "response": "Let me look that up for you in our sales data."
             }
+        
+        # Trend analysis
+        elif any(word in query_lower for word in ["trend", "over time", "performance"]) or (any(word in query_lower for word in ["show", "display"]) and detected_drug):
+            return {
+                "type": "function_call",
+                "function_name": "analyze_sales_trend", 
+                "function_args": {"drug_name": detected_drug, "region": detected_region},
+                "response": f"I'll analyze the sales trends for {detected_drug or 'all drugs'}" + (f" in {detected_region}" if detected_region else "") + "."
+            }
+        
+        # Comparisons
         elif any(word in query_lower for word in ["compare", "comparison", "vs", "versus"]):
             return {
-                'intent': 'COMPARATIVE_ANALYSIS',
-                'entities': {'drug': detected_drug, 'region': detected_region},
-                'confidence': 0.8,
-                'llm_response': "I'll help you compare drug performance data.",
-                'needs_data_analysis': True
+                "type": "function_call",
+                "function_name": "compare_drugs",
+                "function_args": {"region": detected_region},
+                "response": "I'll compare the drug performance data for you."
             }
-        elif any(word in query_lower for word in ["region", "geography", "where", "location"]):
+        
+        # Regional analysis
+        elif any(word in query_lower for word in ["region", "geography", "where", "location"]) and not any(phrase in query_lower for phrase in ["what can you do", "how can you help"]):
             return {
-                'intent': 'REGIONAL_ANALYSIS',
-                'entities': {'drug': detected_drug, 'region': detected_region},
-                'confidence': 0.8,
-                'llm_response': f"I'll analyze regional performance for {detected_drug or 'drugs'}.",
-                'needs_data_analysis': True
+                "type": "function_call",
+                "function_name": "regional_analysis",
+                "function_args": {"drug_name": detected_drug},
+                "response": f"I'll analyze regional performance{' for ' + detected_drug if detected_drug else ''}."
             }
-        elif any(word in query_lower for word in ["summary", "overview", "general", "overall", "insights", "interesting", "findings", "what's", "tell me about"]):
+        
+        # Auto insights
+        elif any(word in query_lower for word in ["insights", "interesting", "findings", "summary", "overview", "tell me about", "business", "general"]):
             return {
-                'intent': 'AUTO_INSIGHTS',
-                'entities': {'drug': detected_drug, 'region': detected_region},
-                'confidence': 0.8,
-                'llm_response': "I'll analyze the data and show you some interesting insights about our healthcare business.",
-                'needs_data_analysis': True
+                "type": "function_call", 
+                "function_name": "generate_auto_insights",
+                "function_args": {},
+                "response": "Let me analyze the data and show you some interesting insights about the healthcare business."
             }
+        
+        # Default conversational response for unclear queries
         else:
             return {
-                'intent': 'GENERAL_QUERY',
-                'entities': {},
-                'confidence': 0.6,
-                'llm_response': "I understand you're asking about healthcare data. Could you be more specific? For example, try asking about sales trends, comparisons, or regional analysis.",
-                'needs_data_analysis': False
+                "type": "conversational",
+                "response": "I'm not sure I understand what you're looking for. Could you be more specific? For example, you could ask about sales trends, drug comparisons, regional performance, or specific questions about the business data."
             }
     
-    def process_query(self, query: str, data_context: str = "") -> Dict:
-        """Use LLM to process unclear queries"""
+    def process_query_with_functions(self, query: str, data_context: str = "", conversation_history: List[Dict] = None) -> Dict:
+        """Process query using LLM with function calling capabilities and conversation context"""
         if not self.available:
             return {
-                'intent': 'GENERAL_QUERY',
-                'entities': {},
-                'confidence': 0.1,
-                'llm_response': "LLM service is not available. Please check your configuration.",
-                'needs_data_analysis': False
+                "type": "conversational",
+                "response": "I'm sorry, but the LLM service is not available right now. Please check the configuration.",
+                "error": True
             }
         
-        # Use demo mode if enabled or if API client is not available
+        # Use demo mode if enabled or client not available
         if self.demo_mode or self.client is None:
-            return self._demo_process_query(query)
+            return self._demo_function_calling_with_context(query, conversation_history or [])
         
         try:
-            # Create a prompt for the LLM to understand healthcare sales queries
-            system_prompt = f"""You are a healthcare sales data analyst AI. Your job is to understand user queries about pharmaceutical sales data and help classify them.
+            # Prepare conversation context for LLM
+            messages = [
+                {
+                    "role": "system", 
+                    "content": f"""You are a helpful healthcare AI assistant specializing in pharmaceutical sales data analysis. You can either have a normal conversation with users or help them analyze business data using the available functions.
 
 Available data context:
 {data_context}
 
-Available drugs: Aspirin, Ibuprofen, Medication X, Allergy Relief, Blood Pressure Med, Diabetes Control, Antibiotic Plus, Vitamin D3
-Available regions: North America, Europe, Asia, South America
+CONVERSATION GUIDELINES:
+1. For greetings, general questions, or casual conversation: Respond naturally and helpfully WITHOUT calling any functions
+2. For business/data analysis requests: Use the appropriate function to analyze the data
+3. Be friendly, professional, and concise
+4. IMPORTANT: Use conversation history to understand context and follow-up questions
+5. If a user refers to "that", "it", "the same", or asks for variations (like "show that for Europe"), use context from previous messages
 
-For the user query, please:
-1. Determine if this is a data analysis request (yes/no)
-2. If yes, identify the intent from: SALES_TREND_ANALYSIS, COMPARATIVE_ANALYSIS, REGIONAL_ANALYSIS, SUMMARY_REQUEST
-3. Extract entities like drug names, regions, time periods
-4. Provide a confidence score (0-1)
-5. If not a data query, provide a helpful response
+AVAILABLE FUNCTIONS:
+- analyze_sales_trend: For trend analysis over time
+- compare_drugs: For comparing drug performance  
+- regional_analysis: For geographic performance analysis
+- generate_auto_insights: For general insights and interesting findings
+- answer_direct_question: For specific questions like "what's our best seller"
 
-Respond in JSON format:
-{{
-    "is_data_query": true/false,
-    "intent": "intent_name",
-    "entities": {{"drug": "name", "region": "name", "time_period": "period"}},
-    "confidence": 0.8,
-    "response": "helpful response if not a data query or explanation of what analysis will be done"
-}}"""
+CONTEXT HANDLING:
+- If user asks for variations of previous analysis (different region, drug, time period), call the same function with updated parameters
+- If user asks "what about [drug]?" after seeing analysis, analyze that specific drug
+- If user says "show that for [region]", use the last analysis type for the specified region
+- Maintain conversation flow and remember what was previously discussed"""
+                }
+            ]
+            
+            # Add conversation history
+            if conversation_history:
+                # Add recent conversation context (last 6 messages to avoid token limits)
+                recent_history = conversation_history[-6:] if len(conversation_history) > 6 else conversation_history
+                for msg in recent_history:
+                    messages.append({
+                        "role": msg["role"],
+                        "content": msg["content"][:500] + "..." if len(msg["content"]) > 500 else msg["content"]  # Truncate long messages
+                    })
+            
+            # Add current query
+            messages.append({"role": "user", "content": query})
 
-            model_name = "gpt-3.5-turbo"
-            if "pai-eas.aliyuncs.com" in str(self.client.base_url):
-                model_name = "kaz-22a"
+            model_name = "kaz-22a"
 
             response = self.client.chat.completions.create(
                 model=model_name,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": query}
-                ],
-                temperature=0.3,
+                messages=messages,
+                tools=self.get_available_functions(),
+                tool_choice="auto",
+                temperature=0.2,
                 max_tokens=500
             )
             
-            # Parse LLM response
-            llm_text = response.choices[0].message.content
+            message = response.choices[0].message
             
-            # Try to parse JSON response
-            try:
-                import json
-                llm_result = json.loads(llm_text)
+            # Check if LLM wants to call a function
+            if message.tool_calls:
+                tool_call = message.tool_calls[0]
+                function_name = tool_call.function.name
+                function_args = json.loads(tool_call.function.arguments)
                 
                 return {
-                    'intent': llm_result.get('intent', 'GENERAL_QUERY'),
-                    'entities': llm_result.get('entities', {}),
-                    'confidence': llm_result.get('confidence', 0.7),
-                    'llm_response': llm_result.get('response', ''),
-                    'needs_data_analysis': llm_result.get('is_data_query', False)
+                    "type": "function_call",
+                    "function_name": function_name,
+                    "function_args": function_args,
+                    "response": message.content or f"Let me analyze that data for you."
                 }
-            except json.JSONDecodeError:
-                # If JSON parsing fails, treat as general response
+            else:
+                # Pure conversational response
                 return {
-                    'intent': 'GENERAL_QUERY',
-                    'entities': {},
-                    'confidence': 0.5,
-                    'llm_response': llm_text,
-                    'needs_data_analysis': False
+                    "type": "conversational", 
+                    "response": message.content
                 }
                 
         except Exception as e:
             print(f"LLM processing error: {e}")
             print("Falling back to demo mode for this query...")
-            return self._demo_process_query(query)
+            return self._demo_function_calling_with_context(query, conversation_history or [])
+    
+    def _demo_function_calling_with_context(self, query: str, conversation_history: List[Dict]) -> Dict:
+        """Enhanced demo mode with conversation context support"""
+        query_lower = query.lower()
+        
+        # Extract context from conversation history
+        last_function_call = None
+        last_analysis_type = None
+        last_drug = None
+        last_region = None
+        
+        # Look for the most recent function call in conversation history
+        for msg in reversed(conversation_history):
+            if msg["role"] == "assistant" and "Function:" in msg.get("content", ""):
+                # Extract function info from assistant message content
+                content = msg["content"]
+                if "analyze_sales_trend" in content:
+                    last_analysis_type = "trend"
+                    last_function_call = "analyze_sales_trend"
+                elif "compare_drugs" in content:
+                    last_analysis_type = "comparison"
+                    last_function_call = "compare_drugs"
+                elif "regional_analysis" in content:
+                    last_analysis_type = "regional"
+                    last_function_call = "regional_analysis"
+                elif "answer_direct_question" in content:
+                    last_analysis_type = "question"
+                    last_function_call = "answer_direct_question"
+                
+                # Try to extract entities from the conversation
+                if "aspirin" in content.lower():
+                    last_drug = "Aspirin"
+                elif "ibuprofen" in content.lower():
+                    last_drug = "Ibuprofen"
+                # Add more drug extractions as needed
+                
+                break
+        
+        # Handle contextual follow-up queries
+        if last_function_call and any(phrase in query_lower for phrase in [
+            "what about", "show that for", "for the same", "but for", "in europe", "in asia", "in north america", "in south america",
+            "show me that", "do the same", "similar analysis", "same thing"
+        ]):
+            
+            # Extract new parameters from the query
+            drugs = ["aspirin", "ibuprofen", "medication x", "allergy relief", 
+                    "blood pressure med", "diabetes control", "antibiotic plus", "vitamin d3"]
+            regions = ["north america", "europe", "asia", "south america"]
+            
+            new_drug = None
+            new_region = None
+            
+            for drug in drugs:
+                if drug in query_lower:
+                    new_drug = drug.title()
+                    break
+                    
+            for region in regions:
+                if region in query_lower:
+                    new_region = region.title()
+                    break
+            
+            # Use previous analysis type with new parameters
+            if last_function_call == "analyze_sales_trend":
+                return {
+                    "type": "function_call",
+                    "function_name": "analyze_sales_trend",
+                    "function_args": {
+                        "drug_name": new_drug or last_drug,
+                        "region": new_region or last_region
+                    },
+                    "response": f"I'll show you the sales trend analysis{' for ' + (new_drug or last_drug) if (new_drug or last_drug) else ''}{' in ' + new_region if new_region else ''}."
+                }
+            elif last_function_call == "compare_drugs":
+                return {
+                    "type": "function_call",
+                    "function_name": "compare_drugs",
+                    "function_args": {"region": new_region or last_region},
+                    "response": f"I'll compare drug performance{' in ' + new_region if new_region else ''}."
+                }
+            elif last_function_call == "regional_analysis":
+                return {
+                    "type": "function_call",
+                    "function_name": "regional_analysis",
+                    "function_args": {"drug_name": new_drug or last_drug},
+                    "response": f"I'll analyze regional performance{' for ' + (new_drug or last_drug) if (new_drug or last_drug) else ''}."
+                }
+        
+        # Standard processing if no context match
+        return self._demo_function_calling(query)
 
 class HealthcareDatabase:
     def __init__(self):
@@ -405,109 +644,31 @@ Database Summary:
 - Total sales amount: ${total_sales['sales_amount'].sum():,.2f}
 """
 
-class NLUProcessor:
-    def __init__(self, llm_processor: LLMProcessor):
-        self.llm_processor = llm_processor
-        self.intents = {
-            'SALES_TREND_ANALYSIS': ['trend', 'sales over time', 'performance', 'growth', 'change'],
-            'COMPARATIVE_ANALYSIS': ['compare', 'comparison', 'vs', 'versus', 'difference'],
-            'TEMPORAL_BREAKDOWN': ['monthly', 'weekly', 'yearly', 'quarterly', 'breakdown'],
-            'REGIONAL_ANALYSIS': ['region', 'country', 'area', 'geographic', 'location'],
-            'DRUG_ANALYSIS': ['drug', 'medication', 'medicine', 'pharmaceutical'],
-            'VISUALIZATION_REQUEST': ['chart', 'graph', 'plot', 'visualize', 'show'],
-            'AUTO_INSIGHTS': ['insights', 'interesting', 'findings', 'summary', 'overview', 'report', 'tell me about', 'what', 'general', 'overall', 'business']
-        }
-        
-        self.entities = {
-            'drugs': ['aspirin', 'ibuprofen', 'medication x', 'allergy relief', 
-                     'blood pressure med', 'diabetes control', 'antibiotic plus', 'vitamin d3'],
-            'regions': ['north america', 'europe', 'asia', 'south america'],
-            'time_periods': ['week', 'month', 'quarter', 'year', 'last 3 months', 'last 6 months'],
-            'chart_types': ['bar', 'line', 'pie', 'scatter']
-        }
-    
-    def process_query(self, query: str, data_context: str = "") -> Dict:
-        """Process user query to extract intent and entities with LLM fallback"""
-        query_lower = query.lower()
-        
-        # First try rule-based approach
-        detected_intent = 'GENERAL_QUERY'
-        max_matches = 0
-        
-        for intent, keywords in self.intents.items():
-            matches = sum(1 for keyword in keywords if keyword in query_lower)
-            if matches > max_matches:
-                max_matches = matches
-                detected_intent = intent
-        
-        # Entity extraction
-        entities = {}
-        
-        # Extract drugs
-        for drug in self.entities['drugs']:
-            if drug in query_lower:
-                entities['drug'] = drug.title()
-                break
-        
-        # Extract regions
-        for region in self.entities['regions']:
-            if region in query_lower:
-                entities['region'] = region.title()
-                break
-        
-        # Extract time periods
-        for period in self.entities['time_periods']:
-            if period in query_lower:
-                entities['time_period'] = period
-                break
-        
-        # Extract chart types
-        for chart_type in self.entities['chart_types']:
-            if chart_type in query_lower:
-                entities['chart_type'] = chart_type
-                break
-        
-        confidence = min(max_matches / 3, 1.0)  # Normalize confidence
-        
-        # If confidence is low, try LLM
-        if confidence < 0.3 or detected_intent == 'GENERAL_QUERY':
-            llm_result = self.llm_processor.process_query(query, data_context)
-            
-            # If LLM indicates it's a data query with higher confidence, use LLM result
-            if llm_result['needs_data_analysis'] and llm_result['confidence'] > confidence:
-                return {
-                    'intent': llm_result['intent'],
-                    'entities': llm_result['entities'],
-                    'confidence': llm_result['confidence'],
-                    'source': 'LLM',
-                    'llm_response': llm_result['llm_response']
-                }
-            elif not llm_result['needs_data_analysis']:
-                # For non-data queries, return LLM response directly
-                return {
-                    'intent': 'GENERAL_QUERY',
-                    'entities': {},
-                    'confidence': llm_result['confidence'],
-                    'source': 'LLM',
-                    'llm_response': llm_result['llm_response']
-                }
-        
-        # Return rule-based result
-        return {
-            'intent': detected_intent,
-            'entities': entities,
-            'confidence': confidence,
-            'source': 'Rule-based',
-            'llm_response': None
-        }
-
 class AnalyticsEngine:
     def __init__(self, database: HealthcareDatabase):
         self.db = database
     
+    def execute_function(self, function_name: str, function_args: Dict) -> Tuple[pd.DataFrame, List, str]:
+        """Execute the requested analysis function"""
+        try:
+            if function_name == "analyze_sales_trend":
+                return self.analyze_sales_trend(function_args)
+            elif function_name == "compare_drugs":
+                return self.compare_drugs(function_args)
+            elif function_name == "regional_analysis":
+                return self.regional_analysis(function_args)
+            elif function_name == "generate_auto_insights":
+                return self.generate_auto_insights(function_args)
+            elif function_name == "answer_direct_question":
+                return self.answer_direct_question(function_args.get('question', ''), function_args)
+            else:
+                return pd.DataFrame(), [], f"Unknown function: {function_name}"
+        except Exception as e:
+            return pd.DataFrame(), [], f"Error executing {function_name}: {str(e)}"
+    
     def analyze_sales_trend(self, entities: Dict) -> Tuple[pd.DataFrame, List, str]:
         """Analyze sales trends"""
-        drug_name = entities.get('drug')
+        drug_name = entities.get('drug_name')
         region = entities.get('region')
         
         # Get sales data
@@ -609,7 +770,7 @@ class AnalyticsEngine:
     
     def regional_analysis(self, entities: Dict) -> Tuple[pd.DataFrame, List, str]:
         """Analyze performance by region"""
-        drug_name = entities.get('drug')
+        drug_name = entities.get('drug_name')
         
         df = self.db.get_sales_data(drug_name=drug_name)
         
@@ -749,6 +910,113 @@ class AnalyticsEngine:
         """
         
         return drug_performance, charts, final_insights
+    
+    def answer_direct_question(self, query: str, entities: Dict) -> Tuple[pd.DataFrame, List, str]:
+        """Answer direct questions about the data with natural language responses"""
+        query_lower = query.lower()
+        
+        # Get data for analysis
+        df = self.db.get_sales_data()
+        drug_info = self.db.get_drug_info()
+        
+        if df.empty:
+            return df, [], "I don't have any sales data available to answer your question."
+        
+        # Question type detection and answering
+        if any(phrase in query_lower for phrase in ["best seller", "top performer", "highest sales", "which is our best"]):
+            # Find best selling drug
+            best_drug = df.groupby('drug_name')['sales_amount'].sum().sort_values(ascending=False)
+            top_drug_name = best_drug.index[0]
+            top_drug_sales = best_drug.iloc[0]
+            
+            # Get additional info
+            total_sales = df['sales_amount'].sum()
+            market_share = (top_drug_sales / total_sales) * 100
+            top_quantity = df[df['drug_name'] == top_drug_name]['quantity_sold'].sum()
+            
+            answer = f"""
+            **📊 Best Seller Analysis:**
+            
+            **{top_drug_name}** is our best-selling product with:
+            • **${top_drug_sales:,.2f}** in total sales
+            • **{market_share:.1f}%** market share
+            • **{top_quantity:,}** total units sold
+            
+            This represents our strongest performing product across all regions and time periods.
+            """
+            
+        elif any(phrase in query_lower for phrase in ["worst seller", "lowest sales", "poorest performer"]):
+            # Find worst selling drug
+            worst_drug = df.groupby('drug_name')['sales_amount'].sum().sort_values(ascending=True)
+            worst_drug_name = worst_drug.index[0]
+            worst_drug_sales = worst_drug.iloc[0]
+            
+            answer = f"""
+            **📉 Lowest Performer Analysis:**
+            
+            **{worst_drug_name}** has the lowest sales with:
+            • **${worst_drug_sales:,.2f}** in total sales
+            • This represents our biggest opportunity for improvement
+            """
+            
+        elif any(phrase in query_lower for phrase in ["how much", "total sales", "revenue"]):
+            total_sales = df['sales_amount'].sum()
+            total_quantity = df['quantity_sold'].sum()
+            avg_sale = df['sales_amount'].mean()
+            
+            answer = f"""
+            **💰 Sales Summary:**
+            
+            • **Total Revenue:** ${total_sales:,.2f}
+            • **Total Units Sold:** {total_quantity:,}
+            • **Average Sale Amount:** ${avg_sale:,.2f}
+            """
+            
+        elif any(phrase in query_lower for phrase in ["how many", "number of"]):
+            if "drugs" in query_lower or "products" in query_lower:
+                drug_count = len(df['drug_name'].unique())
+                answer = f"We have **{drug_count}** different drugs/products in our portfolio."
+            elif "regions" in query_lower:
+                region_count = len(df['region'].unique())
+                regions = ', '.join(df['region'].unique())
+                answer = f"We operate in **{region_count}** regions: {regions}."
+            else:
+                sales_count = len(df)
+                answer = f"We have **{sales_count}** total sales transactions in our database."
+                
+        elif any(phrase in query_lower for phrase in ["which region", "best region", "top region"]):
+            best_region = df.groupby('region')['sales_amount'].sum().sort_values(ascending=False)
+            top_region_name = best_region.index[0]
+            top_region_sales = best_region.iloc[0]
+            
+            answer = f"""
+            **🌍 Top Performing Region:**
+            
+            **{top_region_name}** is our best market with:
+            • **${top_region_sales:,.2f}** in total sales
+            • This is our strongest geographical market
+            """
+            
+        else:
+            # Generic data lookup based on entities
+            if entities.get('drug_name'):
+                drug_name = entities['drug_name']
+                drug_data = df[df['drug_name'].str.contains(drug_name, case=False, na=False)]
+                if not drug_data.empty:
+                    drug_sales = drug_data['sales_amount'].sum()
+                    drug_quantity = drug_data['quantity_sold'].sum()
+                    answer = f"""
+                    **💊 {drug_name} Performance:**
+                    
+                    • **Total Sales:** ${drug_sales:,.2f}
+                    • **Units Sold:** {drug_quantity:,}
+                    """
+                else:
+                    answer = f"I couldn't find any sales data for {drug_name}."
+            else:
+                answer = "I understand you're asking a question about our data. Could you be more specific? For example, ask about our best seller, total sales, or a specific drug."
+        
+        return pd.DataFrame(), [], answer  # Return empty DataFrame and charts list since this is text-only
 
 def main():
     # Initialize components
@@ -757,9 +1025,6 @@ def main():
     
     if 'llm' not in st.session_state:
         st.session_state.llm = LLMProcessor()
-    
-    if 'nlu' not in st.session_state:
-        st.session_state.nlu = NLUProcessor(st.session_state.llm)
     
     if 'analytics' not in st.session_state:
         st.session_state.analytics = AnalyticsEngine(st.session_state.db)
@@ -770,81 +1035,36 @@ def main():
     # Title and description
     st.title("🏥 Healthcare AI Assistant Demo")
     st.markdown("""
-    This demo showcases an AI-powered healthcare assistant that can analyze sales data, 
-    generate insights, and create visualizations based on natural language queries.
+    Welcome to your intelligent healthcare assistant! I can help you with both **casual conversation** 
+    and **in-depth sales data analysis**. Just ask me anything naturally.
     """)
     
     # LLM Status indicator
     if st.session_state.llm.available:
-        st.success("🤖 LLM Integration: Active - Can handle complex queries!")
+        if st.session_state.llm.demo_mode:
+            st.info("🤖 AI Assistant: Enhanced Demo Mode - Intelligent conversation + data analysis!")
+        else:
+            st.success("🤖 AI Assistant: Full LLM Integration Active - Advanced conversation capabilities!")
     else:
-        st.warning("⚠️ LLM Integration: Offline - Using keyword-based matching only")
+        st.warning("⚠️ AI Assistant: Limited Mode - Basic responses only")
     
     # Sidebar with sample queries
     with st.sidebar:
-        st.header("📊 Sample Queries")
+        st.header("💬 Try These Questions")
         
-        if st.session_state.llm.available:
-            st.markdown("""
-            **With LLM Enhanced Understanding:**
-            
-            **Sales Trends:**
-            - "Show me the sales trend for Aspirin"
-            - "How has our cardiovascular medication performed?"
-            - "What's happening with pain relief drugs?"
-            
-            **Comparisons:**
-            - "Which is our best seller?"
-            - "Compare all our heart medications"
-            - "Show me drug performance rankings"
-            
-            **Regional Analysis:**
-            - "How are we doing in different markets?"
-            - "Where does Aspirin sell best?"
-            - "Regional breakdown please"
-            
-            **General Questions:**
-            - "Tell me about our business"
-            - "What should I know about our sales?"
-            - "Any interesting insights?"
-            - "Hello, how can you help?"
-            """)
-        else:
-            st.markdown("""
-            Try these example queries:
-            
-            **Sales Trends:**
-            - "Show me the sales trend for Aspirin"
-            - "How has Medication X performed over time?"
-            
-            **Comparisons:**
-            - "Compare drug sales performance"
-            - "Which drugs sell best in Europe?"
-            
-            **Regional Analysis:**
-            - "Show sales by region"
-            - "How is Aspirin performing in North America?"
-            
-            **General Questions:**
-            - "Give me a summary of all drug sales"
-            - "What are the top performing medications?"
-            """)
+        st.markdown("""
+        • Show me sales trends for Aspirin
+        • Compare all drug performance
+        • Which is our best selling drug?
+        • What's our total revenue?
+        • Tell me something interesting about our business
+        """)
         
         st.header("🗃️ Database Info")
         total_sales = st.session_state.db.get_sales_data()
         st.metric("Total Sales Records", len(total_sales))
         st.metric("Total Drugs", len(st.session_state.db.get_drug_info()))
         st.metric("Representatives", len(st.session_state.db.get_representatives()))
-        
-        if st.session_state.llm.available:
-            st.header("🤖 LLM Status")
-            st.success("Connected to kaz-22a model")
-            if st.button("Test LLM Connection"):
-                test_result = st.session_state.llm.process_query("Hello, are you working?", "")
-                if test_result['llm_response']:
-                    st.write("✅ LLM Response:", test_result['llm_response'][:100] + "...")
-                else:
-                    st.error("❌ LLM not responding")
     
     # Chat interface
     st.header("💬 Chat with AI Assistant")
@@ -860,7 +1080,7 @@ def main():
                         st.plotly_chart(chart, use_container_width=True, key=f"msg_{message_idx}_chart_{i}")
     
     # Chat input
-    if prompt := st.chat_input("Ask me about healthcare sales data..."):
+    if prompt := st.chat_input("Ask me anything about healthcare data or just say hello..."):
         # Add user message
         st.session_state.messages.append({"role": "user", "content": prompt})
         
@@ -868,69 +1088,84 @@ def main():
         with st.chat_message("user"):
             st.markdown(prompt)
         
-        # Process query
+        # Process query with LLM-first approach
         with st.chat_message("assistant"):
-            with st.spinner("Analyzing your query..."):
+            with st.spinner("Thinking..."):
                 # Get data context for LLM
                 data_context = st.session_state.db.get_data_summary()
                 
-                # NLU processing
-                nlu_result = st.session_state.nlu.process_query(prompt, data_context)
+                # Prepare conversation history for LLM (convert from our format to LLM format)
+                conversation_history = []
+                for msg in st.session_state.messages[:-1]:  # Exclude the current message
+                    # Simplify assistant messages for context (remove technical details)
+                    if msg["role"] == "assistant":
+                        content = msg["content"]
+                        # Extract the main response part, removing technical details
+                        if "**" in content and "Analysis:" in content:
+                            # For technical responses, create a simplified summary
+                            parts = content.split("**")
+                            if len(parts) > 1:
+                                # Find the function name and main response
+                                function_info = ""
+                                main_response = ""
+                                for i, part in enumerate(parts):
+                                    if "Function:" in part:
+                                        function_info = f"Function: {part.split('Function:')[1].split('\\n')[0].strip()}"
+                                    elif "Args:" in part:
+                                        args_info = f"Args: {part.split('Args:')[1].split('\\n')[0].strip()}"
+                                        function_info += f" {args_info}"
+                                    elif "Analysis Results:" in part or "Business Insights:" in part:
+                                        # Extract just the summary without all details
+                                        main_response = part[:200] + "..." if len(part) > 200 else part
+                                        break
+                                
+                                simplified_content = f"{function_info}\\n{main_response}" if function_info else content[:300] + "..."
+                            else:
+                                simplified_content = content[:300] + "..." if len(content) > 300 else content
+                        else:
+                            # For conversational responses, use as-is but limit length
+                            simplified_content = content[:300] + "..." if len(content) > 300 else content
+                        
+                        conversation_history.append({
+                            "role": "assistant",
+                            "content": simplified_content
+                        })
+                    else:
+                        conversation_history.append(msg)
                 
-                # Check if this is a general query handled by LLM
-                if nlu_result.get('llm_response') and nlu_result['intent'] == 'GENERAL_QUERY':
-                    # Handle general questions with LLM response
-                    response = f"""
-                    **Query Processing:**
-                    - Source: {nlu_result.get('source', 'Unknown')}
-                    - Confidence: {nlu_result['confidence']:.2f}
-                    
-                    **Response:**
-                    {nlu_result['llm_response']}
-                    """
-                    
-                    st.markdown(response)
-                    
-                    # Add assistant message
+                # Process with LLM function calling
+                llm_result = st.session_state.llm.process_query_with_functions(prompt, data_context, conversation_history)
+                
+                if llm_result.get('error'):
+                    # Handle errors
+                    st.error(llm_result['response'])
                     st.session_state.messages.append({
                         "role": "assistant", 
-                        "content": response,
+                        "content": llm_result['response'],
                         "charts": []
                     })
-                else:
-                    # Handle data analysis queries
-                    intent = nlu_result['intent']
-                    entities = nlu_result['entities']
-                    charts = []
-                    
+                elif llm_result['type'] == 'conversational':
+                    # Handle pure conversational responses
+                    st.markdown(llm_result['response'])
+                    st.session_state.messages.append({
+                        "role": "assistant", 
+                        "content": llm_result['response'],
+                        "charts": []
+                    })
+                elif llm_result['type'] == 'function_call':
+                    # Handle function calls (data analysis)
                     try:
-                        if intent == 'SALES_TREND_ANALYSIS':
-                            data, charts, insights = st.session_state.analytics.analyze_sales_trend(entities)
-                        elif intent == 'COMPARATIVE_ANALYSIS':
-                            data, charts, insights = st.session_state.analytics.compare_drugs(entities)
-                        elif intent == 'REGIONAL_ANALYSIS':
-                            data, charts, insights = st.session_state.analytics.regional_analysis(entities)
-                        elif intent == 'AUTO_INSIGHTS':
-                            data, charts, insights = st.session_state.analytics.generate_auto_insights(entities)
-                        else:
-                            # Default: show general summary
-                            data, charts, insights = st.session_state.analytics.compare_drugs(entities)
+                        # Show initial response
+                        st.markdown(llm_result['response'])
                         
-                        # Display response
-                        response = f"""
-                        **Query Analysis:**
-                        - Intent: {intent.replace('_', ' ').title()}
-                        - Source: {nlu_result.get('source', 'Rule-based')}
-                        - Confidence: {nlu_result['confidence']:.2f}
-                        - Entities: {', '.join([f"{k}: {v}" for k, v in entities.items()]) if entities else 'None detected'}
+                        # Execute the requested function
+                        function_name = llm_result['function_name']
+                        function_args = llm_result['function_args']
                         
-                        {insights}
-                        """
+                        data, charts, insights = st.session_state.analytics.execute_function(function_name, function_args)
                         
-                        if nlu_result.get('llm_response'):
-                            response += f"\n\n**AI Insight:** {nlu_result['llm_response']}"
-                        
-                        st.markdown(response)
+                        # Display results
+                        st.markdown(insights)
                         
                         # Display charts with unique keys
                         if charts:
@@ -943,15 +1178,24 @@ def main():
                                     with cols[i]:
                                         st.plotly_chart(chart, use_container_width=True, key=f"chart_multi_{current_time}_{i}")
                         
+                        # Create comprehensive response for message history with function details
+                        full_response = f"""**Query Analysis:**
+- Function: {function_name}
+- Args: {function_args}
+
+**Initial Response:** {llm_result['response']}
+
+{insights}"""
+                        
                         # Add assistant message
                         st.session_state.messages.append({
                             "role": "assistant", 
-                            "content": response,
+                            "content": full_response,
                             "charts": charts
                         })
                         
                     except Exception as e:
-                        error_message = f"I encountered an error processing your query: {str(e)}"
+                        error_message = f"I encountered an error while analyzing the data: {str(e)}"
                         st.error(error_message)
                         st.session_state.messages.append({
                             "role": "assistant", 

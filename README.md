@@ -9,7 +9,7 @@ This document outlines the technical solution for an AI-powered assistant that i
 ```
 healthcare_ai_assistant_architecture/
 ├── README.md                 # This comprehensive documentation
-├── demo_app.py              # Streamlit demo application (21KB)
+├── demo_app.py              # Streamlit demo application (56KB)
 ├── requirements.txt         # Python dependencies for demo
 ├── run_demo.py             # Quick setup and run script
 ├── test_demo.py            # Component testing script
@@ -33,24 +33,18 @@ python test_demo.py
 ```
 
 **Then open your browser to `http://localhost:8501` and try these queries:**
-- "Show me the sales trend for Aspirin"
-- "Compare drug sales performance"
-- "How is Medication X performing in Europe?"
-- **NEW**: "Hello, what can you help me with?" (handled by LLM)
+- Show me sales trends for Aspirin
+- Compare all drug performance
+- Which is our best selling drug?
+- Tell me something interesting about our business
 
-### 🤖 LLM Integration
+The demo includes **intelligent query processing** with conversational flow:
 
-The demo includes **intelligent query processing** that can handle unexpected questions:
-
-- **Smart Processing**: Rule-based matching for fast queries + LLM fallback for complex ones
-- **Natural Conversations**: Ask anything like "How's our business?" or "What should I know?"
-- **Automatic Setup**: Uses provided kaz-22a endpoint out of the box
-- **Graceful Fallback**: Works perfectly even without LLM connection
-
-**Enhanced Query Examples:**
-- General: "Hello", "How can you help?", "Tell me about the business"
-- Complex: "How are our cardiovascular medications performing?"
-- Natural: "Which drugs need management attention?"
+- **🎯 LLM-First Architecture**: Proper conversation vs analysis detection
+- **💬 Natural Conversations**: "Hello" gets friendly responses, not technical jargon
+- **🔧 Function Calling**: LLM intelligently decides when to analyze data
+- **🚀 Smart Processing**: Real LLM integration + enhanced fallback mode
+- **⚡ Graceful Fallback**: Works perfectly even without LLM connection
 
 ---
 
@@ -79,7 +73,7 @@ The demo includes **intelligent query processing** that can handle unexpected qu
 **Components**:
 
 #### Intent Classification Model
-- **Model Type**: Fine-tuned BERT/RoBERTa or GPT-3.5/4 API
+- **Model Type**: Fine-tuned BERT/RoBERTa or GPT API
 - **Purpose**: Classify user requests into predefined business intents
 - **Training Data**: Business domain-specific intents (sales analysis, trend analysis, comparison, etc.)
 - **Intents Examples**:
@@ -145,7 +139,7 @@ The demo includes **intelligent query processing** that can handle unexpected qu
   - Export capabilities (PNG, PDF, SVG)
 
 #### Natural Language Generation (NLG)
-- **Model Type**: GPT-3.5/4 API or fine-tuned T5/BART
+- **Model Type**: GPT API or fine-tuned T5/BART
 - **Purpose**: Generate human-readable insights and explanations
 - **Capabilities**:
   - Summarize statistical findings
@@ -395,81 +389,34 @@ The included demo implements simplified versions of the key architectural compon
 | Full Architecture Component | Demo Implementation |
 |----------------------------|-------------------|
 | AI Assistant Gateway | Streamlit main interface |
-| NLU Service | **Enhanced**: Rule-based + LLM fallback |
+| NLU Service | **Enhanced**: LLM + Rule-based fallback |
 | Business Logic Orchestrator | `AnalyticsEngine` class |
 | Data Integration Service | `HealthcareDatabase` class with SQLite |
 | Visualization Engine | Plotly chart generation |
 | Chat Interface | Streamlit chat components |
 | Database Layer | SQLite with realistic sample data |
 
-### Sample Queries to Try
+### Conversation Context & Memory
 
-#### Sales Trend Analysis
-- "Show me the sales trend for Aspirin"
-- "How has Medication X performed over time?"
-- "What's the trend for diabetes control sales?"
+The demo showcases advanced conversation capabilities:
 
-#### Comparative Analysis
-- "Compare drug sales performance"
-- "Which drugs sell best?"
-- "Show me a comparison of all medications"
+#### **Context-Aware Follow-ups**
+```
+User: "Show me sales trends for Aspirin"
+AI: [Generates trend analysis]
 
-#### Regional Analysis
-- "Show sales by region"
-- "How is Aspirin performing in North America?"
-- "Which region has the best sales?"
+User: "What about for Europe specifically?"
+AI: [Shows same analysis filtered for Europe]
 
-#### **Enhanced with LLM**
-- "Hello, what can you help me with?"
-- "How are our cardiovascular medications doing?"
-- "Tell me something interesting about our data"
-- "What should management know?"
-
-### Demo Database Schema
-
-```sql
--- Sales transactions
-CREATE TABLE sales_data (
-    id INTEGER PRIMARY KEY,
-    drug_name TEXT,
-    region TEXT,
-    sales_amount REAL,
-    quantity_sold INTEGER,
-    sale_date DATE,
-    representative_id TEXT
-);
-
--- Drug catalog
-CREATE TABLE drug_info (
-    drug_name TEXT PRIMARY KEY,
-    category TEXT,
-    manufacturer TEXT,
-    price_per_unit REAL,
-    approval_date DATE
-);
-
--- Sales team
-CREATE TABLE representatives (
-    rep_id TEXT PRIMARY KEY,
-    name TEXT,
-    region TEXT,
-    hire_date DATE,
-    performance_score REAL
-);
+User: "Now show that for Ibuprofen"
+AI: [Analyzes Ibuprofen trends with Europe filter maintained]
 ```
 
-### Demo Capabilities
-
-✅ **Intent Recognition**: 7 different business intents  
-✅ **Entity Extraction**: Drugs, regions, time periods  
-✅ **Data Analytics**: Statistical analysis with insights  
-✅ **Interactive Charts**: Line, bar, and pie visualizations  
-✅ **Chat History**: Persistent conversation memory  
-✅ **Error Handling**: Graceful fallbacks for unclear queries  
-✅ **Sample Data**: Realistic healthcare sales context  
-✅ **LLM Integration**: Handles unexpected queries intelligently  
-
----
+#### **Natural Conversation Flow**
+- **Greetings**: "Hello" → Natural welcome response
+- **Follow-ups**: "What about..." → Context-aware analysis
+- **Parameter Switching**: "Show that for Asia" → Inherits analysis type
+- **Conversation Memory**: Maintains context throughout session
 
 ## 8. Implementation Roadmap
 
@@ -479,6 +426,7 @@ CREATE TABLE representatives (
 - Integration with existing Data Module
 - Simple analytics and visualization
 - **LLM integration for enhanced understanding**
+- **Conversation context and memory**
 
 ### Phase 2 (Months 4-6)
 - Advanced analytics capabilities
@@ -523,7 +471,7 @@ CREATE TABLE representatives (
 - **Database**: SQLite
 - **Analytics**: Pandas + NumPy
 - **Visualization**: Plotly
-- **NLU**: Rule-based + LLM (kaz-22a model)
+- **NLU**: LLM (OpenAI) + Rule-based fallback
 
 ## 10. Security and Compliance
 
@@ -539,48 +487,7 @@ CREATE TABLE representatives (
 - Audit logging for all data access
 - Data retention and deletion policies
 
-## 11. Detailed Query Processing Flow
-
-### Example: "Show the trend of my sales"
-1. **NLU Processing**:
-   - Intent: `SALES_TREND_ANALYSIS`
-   - Entities: `{"metric": "sales", "scope": "user", "analysis_type": "trend"}`
-
-2. **Workflow Execution**:
-   - Retrieve user's promoted drugs from Personal Data Module
-   - Fetch sales data from Data Module with user's region filters
-   - Apply trend analysis algorithms
-
-3. **Analysis & Visualization**:
-   - Calculate trend metrics (slope, R², growth rate)
-   - Generate line chart configuration
-   - Create natural language summary
-
-4. **Response Generation**:
-   - Combine chart and text insights
-   - Include recommendations if anomalies detected
-
-### Example: "How have Aspirin sales changed over the last 3 months? Provide a text-only report without visualization."
-1. **NLU Processing**:
-   - Intent: `COMPARATIVE_ANALYSIS`
-   - Entities: `{"drug": "Aspirin", "time_period": "3 months", "output_format": "text_only"}`
-
-2. **Workflow Execution**:
-   - Query Data Module for Aspirin sales in last 3 months
-   - Compare with previous 3-month period
-   - Calculate statistical significance
-
-3. **Analysis**:
-   - Percentage change calculation
-   - Statistical significance testing
-   - Trend direction analysis
-
-4. **NLG Response**:
-   - Generate comprehensive text report
-   - Include key metrics and insights
-   - Provide contextual explanations
-
-## 12. Key Benefits and Advantages
+## 11. Key Benefits and Advantages
 
 ### Business Benefits
 1. **Reduced Analysis Time**: From hours to minutes for complex queries
@@ -600,43 +507,12 @@ CREATE TABLE representatives (
 3. **Personalized Experience**: User preferences and role-based access
 4. **Real-Time Processing**: Immediate responses to business questions
 
-## 13. Extending the Demo
-
-### Adding New Intents
-1. Update the `intents` dictionary in `NLUProcessor`
-2. Add corresponding keywords for detection
-3. Implement analysis logic in `AnalyticsEngine`
-
-### Adding New Entities
-1. Update the `entities` dictionary in `NLUProcessor`
-2. Add extraction logic in `process_query` method
-3. Handle new entities in analytics methods
-
-### Adding New Visualizations
-1. Import additional Plotly chart types
-2. Add chart generation logic in analytics methods
-3. Update the display logic in the main interface
-
-## 14. Next Steps
-
-### Immediate (Try the Demo)
-1. **Run the Application**: `python run_demo.py`
-2. **Test Queries**: Use the sample queries provided
-3. **Explore Code**: Review the implementation details
-
-### Short-term (Extend Demo)
-1. **Add New Drug Data**: Expand the sample database
-2. **Implement New Chart Types**: Add scatter plots, histograms
-3. **Enhanced NLU**: Add more sophisticated entity extraction
-
-### Long-term (Production Implementation)
-1. **ML Integration**: Replace rule-based NLU with ML models
-2. **Real Data Sources**: Connect to actual healthcare databases
-3. **Enterprise Features**: Add authentication, audit logging, compliance
-4. **Scalability**: Implement microservices architecture
-
 ---
 
 This comprehensive architecture provides a robust foundation for your healthcare AI assistant with a **working demo** that proves the concept. The demo demonstrates all core capabilities in a simplified but functional implementation, ready for immediate testing and further development.
 
 **🚀 Start exploring now with `python run_demo.py`!**
+
+---
+
+**🏥 Healthcare AI Assistant - Making data analysis as easy as having a conversation!**
