@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This document outlines the technical solution for an AI-powered assistant that integrates with existing healthcare data modules to provide intelligent data analysis, visualization, and reporting capabilities through natural language interactions. **A fully functional demo is included to showcase the core concepts.**
+This document outlines the technical solution for an AI-powered assistant that integrates with existing healthcare data modules to provide intelligent data analysis, visualization, and reporting capabilities through natural language interactions. **A fully functional demo with LLM integration is included to showcase the core concepts.**
 
 ## 📁 Project Structure
 
@@ -36,6 +36,21 @@ python test_demo.py
 - "Show me the sales trend for Aspirin"
 - "Compare drug sales performance"
 - "How is Medication X performing in Europe?"
+- **NEW**: "Hello, what can you help me with?" (handled by LLM)
+
+### 🤖 LLM Integration
+
+The demo includes **intelligent query processing** that can handle unexpected questions:
+
+- **Smart Processing**: Rule-based matching for fast queries + LLM fallback for complex ones
+- **Natural Conversations**: Ask anything like "How's our business?" or "What should I know?"
+- **Automatic Setup**: Uses provided kaz-22a endpoint out of the box
+- **Graceful Fallback**: Works perfectly even without LLM connection
+
+**Enhanced Query Examples:**
+- General: "Hello", "How can you help?", "Tell me about the business"
+- Complex: "How are our cardiovascular medications performing?"
+- Natural: "Which drugs need management attention?"
 
 ---
 
@@ -358,6 +373,7 @@ The included demo implements simplified versions of the key architectural compon
 
 #### 🤖 AI-Powered Chat Interface
 - Natural language query processing with Streamlit
+- **LLM-enhanced understanding** for complex queries
 - Intent classification and entity extraction
 - Context-aware responses with data insights
 - Real-time chart integration
@@ -379,7 +395,7 @@ The included demo implements simplified versions of the key architectural compon
 | Full Architecture Component | Demo Implementation |
 |----------------------------|-------------------|
 | AI Assistant Gateway | Streamlit main interface |
-| NLU Service | `NLUProcessor` class with keyword-based classification |
+| NLU Service | **Enhanced**: Rule-based + LLM fallback |
 | Business Logic Orchestrator | `AnalyticsEngine` class |
 | Data Integration Service | `HealthcareDatabase` class with SQLite |
 | Visualization Engine | Plotly chart generation |
@@ -402,6 +418,12 @@ The included demo implements simplified versions of the key architectural compon
 - "Show sales by region"
 - "How is Aspirin performing in North America?"
 - "Which region has the best sales?"
+
+#### **Enhanced with LLM**
+- "Hello, what can you help me with?"
+- "How are our cardiovascular medications doing?"
+- "Tell me something interesting about our data"
+- "What should management know?"
 
 ### Demo Database Schema
 
@@ -445,6 +467,7 @@ CREATE TABLE representatives (
 ✅ **Chat History**: Persistent conversation memory  
 ✅ **Error Handling**: Graceful fallbacks for unclear queries  
 ✅ **Sample Data**: Realistic healthcare sales context  
+✅ **LLM Integration**: Handles unexpected queries intelligently  
 
 ---
 
@@ -455,6 +478,7 @@ CREATE TABLE representatives (
 - Basic intent classification and entity extraction
 - Integration with existing Data Module
 - Simple analytics and visualization
+- **LLM integration for enhanced understanding**
 
 ### Phase 2 (Months 4-6)
 - Advanced analytics capabilities
@@ -499,7 +523,7 @@ CREATE TABLE representatives (
 - **Database**: SQLite
 - **Analytics**: Pandas + NumPy
 - **Visualization**: Plotly
-- **NLU**: Rule-based pattern matching
+- **NLU**: Rule-based + LLM (kaz-22a model)
 
 ## 10. Security and Compliance
 

@@ -6,7 +6,17 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import random
 import re
+import os
 from typing import Dict, List, Tuple, Optional
+
+# LLM Integration
+try:
+    from openai import OpenAI
+    from dotenv import load_dotenv
+    LLM_AVAILABLE = True
+except ImportError:
+    LLM_AVAILABLE = False
+    st.warning("⚠️ LLM packages not installed. Install with: pip install openai python-dotenv")
 
 # Set page configuration
 st.set_page_config(
@@ -15,6 +25,212 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+class LLMProcessor:
+    def __init__(self):
+        self.client = None
+        self.available = False
+        self.demo_mode = False
+        self.init_llm()
+    
+    def init_llm(self):
+        """Initialize LLM client"""
+        if not LLM_AVAILABLE:
+            return
+        
+        try:
+            # Try to load from environment first
+            if os.path.exists('.env'):
+                load_dotenv()
+            
+            # Check if demo mode is enabled
+            if os.getenv("DEMO_MODE", "false").lower() == "true":
+                self.demo_mode = True
+                self.available = True
+                print("✅ LLM initialized in DEMO MODE (rule-based responses)")
+                return
+            
+            # Get configuration from environment
+            base_url = os.getenv("OPENAI_BASE_URL")
+            api_key = os.getenv("OPENAI_API_KEY")
+            
+            if not api_key:
+                print("⚠️ No OPENAI_API_KEY found. Falling back to demo mode.")
+                self.demo_mode = True
+                self.available = True
+                return
+            
+            # Initialize OpenAI client
+            if base_url:
+                self.client = OpenAI(base_url=base_url, api_key=api_key)
+            else:
+                self.client = OpenAI(api_key=api_key)
+                
+            # Test the connection
+            test_response = self.client.chat.completions.create(
+                model="gpt-3.5-turbo" if not base_url else "kaz-22a",
+                messages=[{"role": "user", "content": "Hello"}],
+                max_tokens=5
+            )
+            
+            self.available = True
+            print("✅ LLM initialized successfully with API")
+            
+        except Exception as e:
+            print(f"⚠️ LLM API initialization failed: {e}")
+            print("Falling back to demo mode...")
+            self.demo_mode = True
+            self.available = True
+    
+    def _demo_process_query(self, query: str) -> Dict:
+        """Rule-based query processing for demo mode"""
+        query_lower = query.lower()
+        
+        # Drug name detection
+        drugs = ["aspirin", "ibuprofen", "medication x", "allergy relief", 
+                "blood pressure med", "diabetes control", "antibiotic plus", "vitamin d3"]
+        regions = ["north america", "europe", "asia", "south america"]
+        
+        detected_drug = None
+        detected_region = None
+        
+        for drug in drugs:
+            if drug in query_lower:
+                detected_drug = drug.title()
+                break
+                
+        for region in regions:
+            if region in query_lower:
+                detected_region = region.title()
+                break
+        
+        # Intent detection based on keywords
+        if any(word in query_lower for word in ["trend", "sales", "performance", "over time"]):
+            return {
+                'intent': 'SALES_TREND_ANALYSIS',
+                'entities': {'drug': detected_drug, 'region': detected_region},
+                'confidence': 0.8,
+                'llm_response': f"I'll analyze the sales trend for {detected_drug or 'all drugs'}" + 
+                              (f" in {detected_region}" if detected_region else ""),
+                'needs_data_analysis': True
+            }
+        elif any(word in query_lower for word in ["compare", "comparison", "vs", "versus"]):
+            return {
+                'intent': 'COMPARATIVE_ANALYSIS',
+                'entities': {'drug': detected_drug, 'region': detected_region},
+                'confidence': 0.8,
+                'llm_response': "I'll help you compare drug performance data.",
+                'needs_data_analysis': True
+            }
+        elif any(word in query_lower for word in ["region", "geography", "where", "location"]):
+            return {
+                'intent': 'REGIONAL_ANALYSIS',
+                'entities': {'drug': detected_drug, 'region': detected_region},
+                'confidence': 0.8,
+                'llm_response': f"I'll analyze regional performance for {detected_drug or 'drugs'}.",
+                'needs_data_analysis': True
+            }
+        elif any(word in query_lower for word in ["summary", "overview", "general", "overall", "insights", "interesting", "findings", "what's", "tell me about"]):
+            return {
+                'intent': 'AUTO_INSIGHTS',
+                'entities': {'drug': detected_drug, 'region': detected_region},
+                'confidence': 0.8,
+                'llm_response': "I'll analyze the data and show you some interesting insights about our healthcare business.",
+                'needs_data_analysis': True
+            }
+        else:
+            return {
+                'intent': 'GENERAL_QUERY',
+                'entities': {},
+                'confidence': 0.6,
+                'llm_response': "I understand you're asking about healthcare data. Could you be more specific? For example, try asking about sales trends, comparisons, or regional analysis.",
+                'needs_data_analysis': False
+            }
+    
+    def process_query(self, query: str, data_context: str = "") -> Dict:
+        """Use LLM to process unclear queries"""
+        if not self.available:
+            return {
+                'intent': 'GENERAL_QUERY',
+                'entities': {},
+                'confidence': 0.1,
+                'llm_response': "LLM service is not available. Please check your configuration.",
+                'needs_data_analysis': False
+            }
+        
+        # Use demo mode if enabled or if API client is not available
+        if self.demo_mode or self.client is None:
+            return self._demo_process_query(query)
+        
+        try:
+            # Create a prompt for the LLM to understand healthcare sales queries
+            system_prompt = f"""You are a healthcare sales data analyst AI. Your job is to understand user queries about pharmaceutical sales data and help classify them.
+
+Available data context:
+{data_context}
+
+Available drugs: Aspirin, Ibuprofen, Medication X, Allergy Relief, Blood Pressure Med, Diabetes Control, Antibiotic Plus, Vitamin D3
+Available regions: North America, Europe, Asia, South America
+
+For the user query, please:
+1. Determine if this is a data analysis request (yes/no)
+2. If yes, identify the intent from: SALES_TREND_ANALYSIS, COMPARATIVE_ANALYSIS, REGIONAL_ANALYSIS, SUMMARY_REQUEST
+3. Extract entities like drug names, regions, time periods
+4. Provide a confidence score (0-1)
+5. If not a data query, provide a helpful response
+
+Respond in JSON format:
+{{
+    "is_data_query": true/false,
+    "intent": "intent_name",
+    "entities": {{"drug": "name", "region": "name", "time_period": "period"}},
+    "confidence": 0.8,
+    "response": "helpful response if not a data query or explanation of what analysis will be done"
+}}"""
+
+            model_name = "gpt-3.5-turbo"
+            if "pai-eas.aliyuncs.com" in str(self.client.base_url):
+                model_name = "kaz-22a"
+
+            response = self.client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": query}
+                ],
+                temperature=0.3,
+                max_tokens=500
+            )
+            
+            # Parse LLM response
+            llm_text = response.choices[0].message.content
+            
+            # Try to parse JSON response
+            try:
+                import json
+                llm_result = json.loads(llm_text)
+                
+                return {
+                    'intent': llm_result.get('intent', 'GENERAL_QUERY'),
+                    'entities': llm_result.get('entities', {}),
+                    'confidence': llm_result.get('confidence', 0.7),
+                    'llm_response': llm_result.get('response', ''),
+                    'needs_data_analysis': llm_result.get('is_data_query', False)
+                }
+            except json.JSONDecodeError:
+                # If JSON parsing fails, treat as general response
+                return {
+                    'intent': 'GENERAL_QUERY',
+                    'entities': {},
+                    'confidence': 0.5,
+                    'llm_response': llm_text,
+                    'needs_data_analysis': False
+                }
+                
+        except Exception as e:
+            print(f"LLM processing error: {e}")
+            print("Falling back to demo mode for this query...")
+            return self._demo_process_query(query)
 
 class HealthcareDatabase:
     def __init__(self):
@@ -173,9 +389,25 @@ class HealthcareDatabase:
             return pd.read_sql_query(query, self.conn, params=[region])
         else:
             return pd.read_sql_query("SELECT * FROM representatives", self.conn)
+    
+    def get_data_summary(self):
+        """Get a summary of available data for LLM context"""
+        total_sales = self.get_sales_data()
+        drug_info = self.get_drug_info()
+        reps = self.get_representatives()
+        
+        return f"""
+Database Summary:
+- Total sales records: {len(total_sales)}
+- Available drugs: {', '.join(drug_info['drug_name'].tolist())}
+- Regions: {', '.join(total_sales['region'].unique())}
+- Date range: {total_sales['sale_date'].min()} to {total_sales['sale_date'].max()}
+- Total sales amount: ${total_sales['sales_amount'].sum():,.2f}
+"""
 
 class NLUProcessor:
-    def __init__(self):
+    def __init__(self, llm_processor: LLMProcessor):
+        self.llm_processor = llm_processor
         self.intents = {
             'SALES_TREND_ANALYSIS': ['trend', 'sales over time', 'performance', 'growth', 'change'],
             'COMPARATIVE_ANALYSIS': ['compare', 'comparison', 'vs', 'versus', 'difference'],
@@ -183,7 +415,7 @@ class NLUProcessor:
             'REGIONAL_ANALYSIS': ['region', 'country', 'area', 'geographic', 'location'],
             'DRUG_ANALYSIS': ['drug', 'medication', 'medicine', 'pharmaceutical'],
             'VISUALIZATION_REQUEST': ['chart', 'graph', 'plot', 'visualize', 'show'],
-            'SUMMARY_REQUEST': ['summary', 'overview', 'report', 'total', 'aggregate']
+            'AUTO_INSIGHTS': ['insights', 'interesting', 'findings', 'summary', 'overview', 'report', 'tell me about', 'what', 'general', 'overall', 'business']
         }
         
         self.entities = {
@@ -194,11 +426,11 @@ class NLUProcessor:
             'chart_types': ['bar', 'line', 'pie', 'scatter']
         }
     
-    def process_query(self, query: str) -> Dict:
-        """Process user query to extract intent and entities"""
+    def process_query(self, query: str, data_context: str = "") -> Dict:
+        """Process user query to extract intent and entities with LLM fallback"""
         query_lower = query.lower()
         
-        # Intent classification
+        # First try rule-based approach
         detected_intent = 'GENERAL_QUERY'
         max_matches = 0
         
@@ -235,10 +467,38 @@ class NLUProcessor:
                 entities['chart_type'] = chart_type
                 break
         
+        confidence = min(max_matches / 3, 1.0)  # Normalize confidence
+        
+        # If confidence is low, try LLM
+        if confidence < 0.3 or detected_intent == 'GENERAL_QUERY':
+            llm_result = self.llm_processor.process_query(query, data_context)
+            
+            # If LLM indicates it's a data query with higher confidence, use LLM result
+            if llm_result['needs_data_analysis'] and llm_result['confidence'] > confidence:
+                return {
+                    'intent': llm_result['intent'],
+                    'entities': llm_result['entities'],
+                    'confidence': llm_result['confidence'],
+                    'source': 'LLM',
+                    'llm_response': llm_result['llm_response']
+                }
+            elif not llm_result['needs_data_analysis']:
+                # For non-data queries, return LLM response directly
+                return {
+                    'intent': 'GENERAL_QUERY',
+                    'entities': {},
+                    'confidence': llm_result['confidence'],
+                    'source': 'LLM',
+                    'llm_response': llm_result['llm_response']
+                }
+        
+        # Return rule-based result
         return {
             'intent': detected_intent,
             'entities': entities,
-            'confidence': min(max_matches / 3, 1.0)  # Normalize confidence
+            'confidence': confidence,
+            'source': 'Rule-based',
+            'llm_response': None
         }
 
 class AnalyticsEngine:
@@ -388,14 +648,118 @@ class AnalyticsEngine:
         """
         
         return regional_data, charts, insights
+    
+    def generate_auto_insights(self, entities: Dict) -> Tuple[pd.DataFrame, List, str]:
+        """Generate automatic insights and interesting findings from the data"""
+        # Get all sales data
+        df = self.db.get_sales_data()
+        drug_info = self.db.get_drug_info()
+        
+        if df.empty:
+            return df, [], "No data available for analysis."
+        
+        charts = []
+        insights = []
+        
+        # 1. Top performing drugs
+        drug_performance = df.groupby('drug_name').agg({
+            'sales_amount': 'sum',
+            'quantity_sold': 'sum'
+        }).reset_index().sort_values('sales_amount', ascending=False)
+        
+        top_drug = drug_performance.iloc[0]
+        insights.append(f"🏆 **Top Performer**: {top_drug['drug_name']} leads with ${top_drug['sales_amount']:,.2f} in total sales")
+        
+        # 2. Regional distribution
+        regional_performance = df.groupby('region')['sales_amount'].sum().sort_values(ascending=False)
+        top_region = regional_performance.index[0]
+        region_share = (regional_performance.iloc[0] / regional_performance.sum()) * 100
+        insights.append(f"🌍 **Market Leader**: {top_region} dominates with {region_share:.1f}% of total sales")
+        
+        # 3. Growth trends (compare first vs last quarter)
+        df['sale_date'] = pd.to_datetime(df['sale_date'])
+        df['quarter'] = df['sale_date'].dt.to_period('Q')
+        quarterly_sales = df.groupby('quarter')['sales_amount'].sum()
+        
+        if len(quarterly_sales) >= 2:
+            growth_rate = ((quarterly_sales.iloc[-1] - quarterly_sales.iloc[0]) / quarterly_sales.iloc[0]) * 100
+            growth_direction = "📈 growing" if growth_rate > 0 else "📉 declining"
+            insights.append(f"📊 **Business Trend**: Sales are {growth_direction} with {abs(growth_rate):.1f}% change from first to last quarter")
+        
+        # 4. Product diversity
+        category_performance = df.merge(drug_info, on='drug_name').groupby('category')['sales_amount'].sum().sort_values(ascending=False)
+        top_category = category_performance.index[0]
+        insights.append(f"💊 **Product Focus**: {top_category} category generates the highest revenue")
+        
+        # 5. Sales concentration
+        total_sales = drug_performance['sales_amount'].sum()
+        top_3_share = (drug_performance.head(3)['sales_amount'].sum() / total_sales) * 100
+        insights.append(f"🎯 **Market Concentration**: Top 3 drugs account for {top_3_share:.1f}% of total sales")
+        
+        # Create summary visualizations
+        
+        # Chart 1: Top 5 drugs performance
+        top_5_drugs = drug_performance.head(5)
+        fig1 = px.bar(top_5_drugs, x='drug_name', y='sales_amount',
+                     title='🏆 Top 5 Performing Drugs',
+                     labels={'drug_name': 'Drug Name', 'sales_amount': 'Total Sales ($)'},
+                     color='sales_amount',
+                     color_continuous_scale='viridis')
+        fig1.update_layout(xaxis_tickangle=-45)
+        charts.append(fig1)
+        
+        # Chart 2: Regional market share
+        fig2 = px.pie(values=regional_performance.values, names=regional_performance.index,
+                     title='🌍 Regional Market Share',
+                     color_discrete_sequence=px.colors.qualitative.Set3)
+        charts.append(fig2)
+        
+        # Chart 3: Category breakdown
+        category_data = df.merge(drug_info, on='drug_name').groupby('category')['sales_amount'].sum().reset_index()
+        fig3 = px.treemap(category_data, path=['category'], values='sales_amount',
+                         title='💊 Sales by Product Category')
+        charts.append(fig3)
+        
+        # Chart 4: Monthly trend
+        monthly_trend = df.groupby(df['sale_date'].dt.to_period('M'))['sales_amount'].sum().reset_index()
+        monthly_trend['month'] = monthly_trend['sale_date'].astype(str)
+        fig4 = px.line(monthly_trend, x='month', y='sales_amount',
+                      title='📊 Monthly Sales Trend',
+                      labels={'month': 'Month', 'sales_amount': 'Sales Amount ($)'})
+        fig4.update_layout(xaxis_tickangle=-45)
+        charts.append(fig4)
+        
+        # Compile final insights
+        final_insights = f"""
+        **🔍 Automatic Business Insights:**
+        
+        {chr(10).join(insights)}
+        
+        **📈 Key Metrics:**
+        • Total Revenue: ${total_sales:,.2f}
+        • Total Products: {len(drug_performance)} drugs across {len(category_performance)} categories
+        • Market Coverage: {len(regional_performance)} regions
+        • Data Period: {len(quarterly_sales)} quarters of sales data
+        
+        **💡 Strategic Recommendations:**
+        • Focus marketing efforts on the leading region ({top_region})
+        • Consider expanding the top-performing category ({top_category})
+        • Monitor the performance concentration in top products
+        • Investigate opportunities in underperforming regions
+        """
+        
+        return drug_performance, charts, final_insights
 
 def main():
     # Initialize components
     if 'db' not in st.session_state:
         st.session_state.db = HealthcareDatabase()
     
+    if 'llm' not in st.session_state:
+        st.session_state.llm = LLMProcessor()
+    
     if 'nlu' not in st.session_state:
-        st.session_state.nlu = NLUProcessor()
+        st.session_state.nlu = NLUProcessor(st.session_state.llm)
     
     if 'analytics' not in st.session_state:
         st.session_state.analytics = AnalyticsEngine(st.session_state.db)
@@ -410,47 +774,90 @@ def main():
     generate insights, and create visualizations based on natural language queries.
     """)
     
+    # LLM Status indicator
+    if st.session_state.llm.available:
+        st.success("🤖 LLM Integration: Active - Can handle complex queries!")
+    else:
+        st.warning("⚠️ LLM Integration: Offline - Using keyword-based matching only")
+    
     # Sidebar with sample queries
     with st.sidebar:
         st.header("📊 Sample Queries")
-        st.markdown("""
-        Try these example queries:
         
-        **Sales Trends:**
-        - "Show me the sales trend for Aspirin"
-        - "How has Medication X performed over time?"
-        
-        **Comparisons:**
-        - "Compare drug sales performance"
-        - "Which drugs sell best in Europe?"
-        
-        **Regional Analysis:**
-        - "Show sales by region"
-        - "How is Aspirin performing in North America?"
-        
-        **General Questions:**
-        - "Give me a summary of all drug sales"
-        - "What are the top performing medications?"
-        """)
+        if st.session_state.llm.available:
+            st.markdown("""
+            **With LLM Enhanced Understanding:**
+            
+            **Sales Trends:**
+            - "Show me the sales trend for Aspirin"
+            - "How has our cardiovascular medication performed?"
+            - "What's happening with pain relief drugs?"
+            
+            **Comparisons:**
+            - "Which is our best seller?"
+            - "Compare all our heart medications"
+            - "Show me drug performance rankings"
+            
+            **Regional Analysis:**
+            - "How are we doing in different markets?"
+            - "Where does Aspirin sell best?"
+            - "Regional breakdown please"
+            
+            **General Questions:**
+            - "Tell me about our business"
+            - "What should I know about our sales?"
+            - "Any interesting insights?"
+            - "Hello, how can you help?"
+            """)
+        else:
+            st.markdown("""
+            Try these example queries:
+            
+            **Sales Trends:**
+            - "Show me the sales trend for Aspirin"
+            - "How has Medication X performed over time?"
+            
+            **Comparisons:**
+            - "Compare drug sales performance"
+            - "Which drugs sell best in Europe?"
+            
+            **Regional Analysis:**
+            - "Show sales by region"
+            - "How is Aspirin performing in North America?"
+            
+            **General Questions:**
+            - "Give me a summary of all drug sales"
+            - "What are the top performing medications?"
+            """)
         
         st.header("🗃️ Database Info")
         total_sales = st.session_state.db.get_sales_data()
         st.metric("Total Sales Records", len(total_sales))
         st.metric("Total Drugs", len(st.session_state.db.get_drug_info()))
         st.metric("Representatives", len(st.session_state.db.get_representatives()))
+        
+        if st.session_state.llm.available:
+            st.header("🤖 LLM Status")
+            st.success("Connected to kaz-22a model")
+            if st.button("Test LLM Connection"):
+                test_result = st.session_state.llm.process_query("Hello, are you working?", "")
+                if test_result['llm_response']:
+                    st.write("✅ LLM Response:", test_result['llm_response'][:100] + "...")
+                else:
+                    st.error("❌ LLM not responding")
     
     # Chat interface
     st.header("💬 Chat with AI Assistant")
     
     # Display chat messages
-    for message in st.session_state.messages:
+    for message_idx, message in enumerate(st.session_state.messages):
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
             if "charts" in message and message["charts"]:
                 cols = st.columns(len(message["charts"]))
                 for i, chart in enumerate(message["charts"]):
                     with cols[i]:
-                        st.plotly_chart(chart, use_container_width=True)
+                        st.plotly_chart(chart, use_container_width=True, key=f"msg_{message_idx}_chart_{i}")
     
     # Chat input
     if prompt := st.chat_input("Ask me about healthcare sales data..."):
@@ -464,63 +871,93 @@ def main():
         # Process query
         with st.chat_message("assistant"):
             with st.spinner("Analyzing your query..."):
+                # Get data context for LLM
+                data_context = st.session_state.db.get_data_summary()
+                
                 # NLU processing
-                nlu_result = st.session_state.nlu.process_query(prompt)
+                nlu_result = st.session_state.nlu.process_query(prompt, data_context)
                 
-                # Generate response based on intent
-                intent = nlu_result['intent']
-                entities = nlu_result['entities']
-                
-                charts = []
-                
-                try:
-                    if intent == 'SALES_TREND_ANALYSIS':
-                        data, charts, insights = st.session_state.analytics.analyze_sales_trend(entities)
-                    elif intent == 'COMPARATIVE_ANALYSIS':
-                        data, charts, insights = st.session_state.analytics.compare_drugs(entities)
-                    elif intent == 'REGIONAL_ANALYSIS':
-                        data, charts, insights = st.session_state.analytics.regional_analysis(entities)
-                    else:
-                        # Default: show general summary
-                        data, charts, insights = st.session_state.analytics.compare_drugs(entities)
-                    
-                    # Display response
+                # Check if this is a general query handled by LLM
+                if nlu_result.get('llm_response') and nlu_result['intent'] == 'GENERAL_QUERY':
+                    # Handle general questions with LLM response
                     response = f"""
-                    **Query Analysis:**
-                    - Intent: {intent.replace('_', ' ').title()}
+                    **Query Processing:**
+                    - Source: {nlu_result.get('source', 'Unknown')}
                     - Confidence: {nlu_result['confidence']:.2f}
-                    - Entities: {', '.join([f"{k}: {v}" for k, v in entities.items()]) if entities else 'None detected'}
                     
-                    {insights}
+                    **Response:**
+                    {nlu_result['llm_response']}
                     """
                     
                     st.markdown(response)
-                    
-                    # Display charts
-                    if charts:
-                        if len(charts) == 1:
-                            st.plotly_chart(charts[0], use_container_width=True)
-                        else:
-                            cols = st.columns(len(charts))
-                            for i, chart in enumerate(charts):
-                                with cols[i]:
-                                    st.plotly_chart(chart, use_container_width=True)
                     
                     # Add assistant message
                     st.session_state.messages.append({
                         "role": "assistant", 
                         "content": response,
-                        "charts": charts
-                    })
-                    
-                except Exception as e:
-                    error_message = f"I encountered an error processing your query: {str(e)}"
-                    st.error(error_message)
-                    st.session_state.messages.append({
-                        "role": "assistant", 
-                        "content": error_message,
                         "charts": []
                     })
+                else:
+                    # Handle data analysis queries
+                    intent = nlu_result['intent']
+                    entities = nlu_result['entities']
+                    charts = []
+                    
+                    try:
+                        if intent == 'SALES_TREND_ANALYSIS':
+                            data, charts, insights = st.session_state.analytics.analyze_sales_trend(entities)
+                        elif intent == 'COMPARATIVE_ANALYSIS':
+                            data, charts, insights = st.session_state.analytics.compare_drugs(entities)
+                        elif intent == 'REGIONAL_ANALYSIS':
+                            data, charts, insights = st.session_state.analytics.regional_analysis(entities)
+                        elif intent == 'AUTO_INSIGHTS':
+                            data, charts, insights = st.session_state.analytics.generate_auto_insights(entities)
+                        else:
+                            # Default: show general summary
+                            data, charts, insights = st.session_state.analytics.compare_drugs(entities)
+                        
+                        # Display response
+                        response = f"""
+                        **Query Analysis:**
+                        - Intent: {intent.replace('_', ' ').title()}
+                        - Source: {nlu_result.get('source', 'Rule-based')}
+                        - Confidence: {nlu_result['confidence']:.2f}
+                        - Entities: {', '.join([f"{k}: {v}" for k, v in entities.items()]) if entities else 'None detected'}
+                        
+                        {insights}
+                        """
+                        
+                        if nlu_result.get('llm_response'):
+                            response += f"\n\n**AI Insight:** {nlu_result['llm_response']}"
+                        
+                        st.markdown(response)
+                        
+                        # Display charts with unique keys
+                        if charts:
+                            current_time = datetime.now().timestamp()
+                            if len(charts) == 1:
+                                st.plotly_chart(charts[0], use_container_width=True, key=f"chart_single_{current_time}")
+                            else:
+                                cols = st.columns(len(charts))
+                                for i, chart in enumerate(charts):
+                                    with cols[i]:
+                                        st.plotly_chart(chart, use_container_width=True, key=f"chart_multi_{current_time}_{i}")
+                        
+                        # Add assistant message
+                        st.session_state.messages.append({
+                            "role": "assistant", 
+                            "content": response,
+                            "charts": charts
+                        })
+                        
+                    except Exception as e:
+                        error_message = f"I encountered an error processing your query: {str(e)}"
+                        st.error(error_message)
+                        st.session_state.messages.append({
+                            "role": "assistant", 
+                            "content": error_message,
+                            "charts": []
+                        })
 
 if __name__ == "__main__":
     main() 
