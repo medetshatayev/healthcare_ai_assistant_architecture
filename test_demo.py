@@ -9,7 +9,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 def test_database():
     """Test database initialization and data population"""
-    print("🧪 Testing Database...")
+    print("Testing Database...")
     try:
         from demo_app import HealthcareDatabase
         db = HealthcareDatabase()
@@ -18,15 +18,15 @@ def test_database():
         drug_info = db.get_drug_info()
         reps = db.get_representatives()
         
-        print(f"  ✅ {len(sales_data)} sales records, {len(drug_info)} drugs, {len(reps)} representatives")
+        print(f"  PASS: {len(sales_data)} sales records, {len(drug_info)} drugs, {len(reps)} representatives")
         return True
     except Exception as e:
-        print(f"  ❌ Failed: {e}")
+        print(f"  FAIL: {e}")
         return False
 
 def test_llm_processor():
     """Test LLM Processor component"""
-    print("🧪 Testing LLM Processor...")
+    print("Testing LLM Processor...")
     try:
         from demo_app import LLMProcessor
         llm = LLMProcessor()
@@ -40,18 +40,18 @@ def test_llm_processor():
         for query, expected_type in test_queries:
             result = llm.process_query_with_functions(query)
             if result['type'] == expected_type:
-                print(f"  ✅ '{query}' → {result['type']}")
+                print(f"  PASS: '{query}' -> {result['type']}")
             else:
-                print(f"  ⚠️ '{query}' → {result['type']} (expected: {expected_type})")
+                print(f"  WARN: '{query}' -> {result['type']} (expected: {expected_type})")
         
         return True
     except Exception as e:
-        print(f"  ❌ Failed: {e}")
+        print(f"  FAIL: {e}")
         return False
 
 def test_analytics():
     """Test Analytics Engine component"""
-    print("🧪 Testing Analytics...")
+    print("Testing Analytics...")
     try:
         from demo_app import HealthcareDatabase, AnalyticsEngine
         
@@ -68,16 +68,16 @@ def test_analytics():
         
         for func_name, args in functions:
             data, charts, insights = analytics.execute_function(func_name, args)
-            print(f"  ✅ {func_name}: {len(charts)} charts generated")
+            print(f"  PASS: {func_name}: {len(charts)} charts generated")
         
         return True
     except Exception as e:
-        print(f"  ❌ Failed: {e}")
+        print(f"  FAIL: {e}")
         return False
 
 def test_conversation_context():
     """Test conversation context and follow-up queries"""
-    print("🧪 Testing Conversation Context...")
+    print("Testing Conversation Context...")
     try:
         from demo_app import LLMProcessor, HealthcareDatabase
         
@@ -103,19 +103,19 @@ def test_conversation_context():
                     "role": "assistant", 
                     "content": f"Function: {result['function_name']} Args: {result['function_args']}"
                 })
-                print(f"  ✅ Query {i+1}: {result['function_name']} with {result['function_args']}")
+                print(f"  PASS: Query {i+1}: {result['function_name']} with {result['function_args']}")
             else:
                 conversation_history.append({"role": "assistant", "content": result['response'][:100]})
-                print(f"  ✅ Query {i+1}: Conversational response")
+                print(f"  PASS: Query {i+1}: Conversational response")
         
         return True
     except Exception as e:
-        print(f"  ❌ Failed: {e}")
+        print(f"  FAIL: {e}")
         return False
 
 def main():
     """Run all tests"""
-    print("🏥 Healthcare AI Assistant - Component Tests")
+    print("Healthcare AI Assistant - Component Tests")
     print("=" * 50)
     
     tests = [
@@ -131,12 +131,12 @@ def main():
             passed += 1
     
     print("=" * 50)
-    print(f"📊 Results: {passed}/{len(tests)} tests passed")
+    print(f"Results: {passed}/{len(tests)} tests passed")
     
     if passed == len(tests):
-        print("🎉 All tests passed! Demo is ready to run.")
+        print("All tests passed! Demo is ready to run.")
     else:
-        print("⚠️ Some tests failed.")
+        print("Some tests failed.")
     
     return passed == len(tests)
 

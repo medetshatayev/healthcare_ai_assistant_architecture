@@ -16,12 +16,12 @@ try:
     LLM_AVAILABLE = True
 except ImportError:
     LLM_AVAILABLE = False
-    st.warning("⚠️ LLM packages not installed. Install with: pip install openai python-dotenv")
+    st.warning("LLM packages not installed. Install with: pip install openai python-dotenv")
 
 # Set page configuration
 st.set_page_config(
     page_title="Healthcare AI Assistant Demo",
-    page_icon="🏥",
+    page_icon="⚕",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -47,7 +47,7 @@ class LLMProcessor:
             if os.getenv("DEMO_MODE", "false").lower() == "true":
                 self.demo_mode = True
                 self.available = True
-                print("✅ LLM initialized in DEMO MODE (enhanced rule-based responses)")
+                print("LLM initialized in DEMO MODE (enhanced rule-based responses)")
                 return
             
             # Get configuration from environment
@@ -55,7 +55,7 @@ class LLMProcessor:
             api_key = os.getenv("OPENAI_API_KEY")
             
             if not api_key:
-                print("⚠️ No OPENAI_API_KEY found. Falling back to demo mode.")
+                print("WARNING: No OPENAI_API_KEY found. Falling back to demo mode.")
                 self.demo_mode = True
                 self.available = True
                 return
@@ -74,10 +74,10 @@ class LLMProcessor:
             )
             
             self.available = True
-            print("✅ LLM initialized successfully with API")
+            print("LLM initialized successfully with API")
             
         except Exception as e:
-            print(f"⚠️ LLM API initialization failed: {e}")
+            print(f"WARNING: LLM API initialization failed: {e}")
             print("Falling back to demo mode...")
             self.demo_mode = True
             self.available = True
@@ -188,17 +188,17 @@ class LLMProcessor:
                 "type": "conversational",
                 "response": """I can help you with several types of healthcare sales analysis:
 
-📊 **Sales Trend Analysis** - Track how drugs perform over time
-🔍 **Drug Comparisons** - Compare performance between different medications  
-🌍 **Regional Analysis** - See how different regions are performing
-💡 **Business Insights** - Get automatic insights and interesting findings
-❓ **Direct Questions** - Answer specific questions like "What's our best seller?"
+**Sales Trend Analysis** - Track how drugs perform over time
+**Drug Comparisons** - Compare performance between different medications  
+**Regional Analysis** - See how different regions are performing
+**Business Insights** - Get automatic insights and interesting findings
+**Direct Questions** - Answer specific questions like "What's our best seller?"
 
 Try asking something like:
-• "Show me sales trends for Aspirin"
-• "Compare drug performance" 
-• "Which is our best selling drug?"
-• "Tell me something interesting about our business"
+- "Show me sales trends for Aspirin"
+- "Compare drug performance" 
+- "Which is our best selling drug?"
+- "Tell me something interesting about our business"
 """
             }
         
@@ -714,10 +714,10 @@ class AnalyticsEngine:
         insights = f"""
         **Sales Trend Analysis Results:**
         
-        • Total Sales: ${total_sales:,.2f}
-        • Average Monthly Sales: ${avg_monthly_sales:,.2f}
-        • Total Quantity Sold: {total_quantity:,} units
-        • Analysis Period: {len(monthly_sales)} months
+        - Total Sales: ${total_sales:,.2f}
+        - Average Monthly Sales: ${avg_monthly_sales:,.2f}
+        - Total Quantity Sold: {total_quantity:,} units
+        - Analysis Period: {len(monthly_sales)} months
         
         The data shows {"positive growth" if monthly_sales['sales_amount'].iloc[-1] > monthly_sales['sales_amount'].iloc[0] else "declining trend"} in sales over the analyzed period.
         """
@@ -759,9 +759,9 @@ class AnalyticsEngine:
         insights = f"""
         **Drug Comparison Analysis:**
         
-        • Top Performing Drug: {top_drug['drug_name']} (${top_drug['sales_amount']:,.2f})
-        • Total Drugs Analyzed: {len(drug_comparison)}
-        • Market Leader Share: {(top_drug['sales_amount'] / drug_comparison['sales_amount'].sum() * 100):.1f}% of total sales
+        - Top Performing Drug: {top_drug['drug_name']} (${top_drug['sales_amount']:,.2f})
+        - Total Drugs Analyzed: {len(drug_comparison)}
+        - Market Leader Share: {(top_drug['sales_amount'] / drug_comparison['sales_amount'].sum() * 100):.1f}% of total sales
         
         The analysis shows clear market leaders and opportunities for growth in underperforming segments.
         """
@@ -801,9 +801,9 @@ class AnalyticsEngine:
         insights = f"""
         **Regional Analysis Results:**
         
-        • Top Performing Region: {top_region['region']} (${top_region['sales_amount']:,.2f})
-        • Regional Distribution: {len(regional_data)} regions analyzed
-        • Market Leader Share: {(top_region['sales_amount'] / regional_data['sales_amount'].sum() * 100):.1f}% of total sales
+        - Top Performing Region: {top_region['region']} (${top_region['sales_amount']:,.2f})
+        - Regional Distribution: {len(regional_data)} regions analyzed
+        - Market Leader Share: {(top_region['sales_amount'] / regional_data['sales_amount'].sum() * 100):.1f}% of total sales
         
         This analysis helps identify key markets and expansion opportunities across different regions.
         """
@@ -829,13 +829,13 @@ class AnalyticsEngine:
         }).reset_index().sort_values('sales_amount', ascending=False)
         
         top_drug = drug_performance.iloc[0]
-        insights.append(f"🏆 **Top Performer**: {top_drug['drug_name']} leads with ${top_drug['sales_amount']:,.2f} in total sales")
+        insights.append(f"**Top Performer**: {top_drug['drug_name']} leads with ${top_drug['sales_amount']:,.2f} in total sales")
         
         # 2. Regional distribution
         regional_performance = df.groupby('region')['sales_amount'].sum().sort_values(ascending=False)
         top_region = regional_performance.index[0]
         region_share = (regional_performance.iloc[0] / regional_performance.sum()) * 100
-        insights.append(f"🌍 **Market Leader**: {top_region} dominates with {region_share:.1f}% of total sales")
+        insights.append(f"**Market Leader**: {top_region} dominates with {region_share:.1f}% of total sales")
         
         # 3. Growth trends (compare first vs last quarter)
         df['sale_date'] = pd.to_datetime(df['sale_date'])
@@ -844,25 +844,25 @@ class AnalyticsEngine:
         
         if len(quarterly_sales) >= 2:
             growth_rate = ((quarterly_sales.iloc[-1] - quarterly_sales.iloc[0]) / quarterly_sales.iloc[0]) * 100
-            growth_direction = "📈 growing" if growth_rate > 0 else "📉 declining"
-            insights.append(f"📊 **Business Trend**: Sales are {growth_direction} with {abs(growth_rate):.1f}% change from first to last quarter")
+            growth_direction = "growing" if growth_rate > 0 else "declining"
+            insights.append(f"**Business Trend**: Sales are {growth_direction} with {abs(growth_rate):.1f}% change from first to last quarter")
         
         # 4. Product diversity
         category_performance = df.merge(drug_info, on='drug_name').groupby('category')['sales_amount'].sum().sort_values(ascending=False)
         top_category = category_performance.index[0]
-        insights.append(f"💊 **Product Focus**: {top_category} category generates the highest revenue")
+        insights.append(f"**Product Focus**: {top_category} category generates the highest revenue")
         
         # 5. Sales concentration
         total_sales = drug_performance['sales_amount'].sum()
         top_3_share = (drug_performance.head(3)['sales_amount'].sum() / total_sales) * 100
-        insights.append(f"🎯 **Market Concentration**: Top 3 drugs account for {top_3_share:.1f}% of total sales")
+        insights.append(f"**Market Concentration**: Top 3 drugs account for {top_3_share:.1f}% of total sales")
         
         # Create summary visualizations
         
         # Chart 1: Top 5 drugs performance
         top_5_drugs = drug_performance.head(5)
         fig1 = px.bar(top_5_drugs, x='drug_name', y='sales_amount',
-                     title='🏆 Top 5 Performing Drugs',
+                     title='Top 5 Performing Drugs',
                      labels={'drug_name': 'Drug Name', 'sales_amount': 'Total Sales ($)'},
                      color='sales_amount',
                      color_continuous_scale='viridis')
@@ -871,42 +871,42 @@ class AnalyticsEngine:
         
         # Chart 2: Regional market share
         fig2 = px.pie(values=regional_performance.values, names=regional_performance.index,
-                     title='🌍 Regional Market Share',
+                     title='Regional Market Share',
                      color_discrete_sequence=px.colors.qualitative.Set3)
         charts.append(fig2)
         
         # Chart 3: Category breakdown
         category_data = df.merge(drug_info, on='drug_name').groupby('category')['sales_amount'].sum().reset_index()
         fig3 = px.treemap(category_data, path=['category'], values='sales_amount',
-                         title='💊 Sales by Product Category')
+                         title='Sales by Product Category')
         charts.append(fig3)
         
         # Chart 4: Monthly trend
         monthly_trend = df.groupby(df['sale_date'].dt.to_period('M'))['sales_amount'].sum().reset_index()
         monthly_trend['month'] = monthly_trend['sale_date'].astype(str)
         fig4 = px.line(monthly_trend, x='month', y='sales_amount',
-                      title='📊 Monthly Sales Trend',
+                      title='Monthly Sales Trend',
                       labels={'month': 'Month', 'sales_amount': 'Sales Amount ($)'})
         fig4.update_layout(xaxis_tickangle=-45)
         charts.append(fig4)
         
         # Compile final insights
         final_insights = f"""
-        **🔍 Automatic Business Insights:**
+        **Automatic Business Insights:**
         
         {chr(10).join(insights)}
         
-        **📈 Key Metrics:**
-        • Total Revenue: ${total_sales:,.2f}
-        • Total Products: {len(drug_performance)} drugs across {len(category_performance)} categories
-        • Market Coverage: {len(regional_performance)} regions
-        • Data Period: {len(quarterly_sales)} quarters of sales data
+        **Key Metrics:**
+        - Total Revenue: ${total_sales:,.2f}
+        - Total Products: {len(drug_performance)} drugs across {len(category_performance)} categories
+        - Market Coverage: {len(regional_performance)} regions
+        - Data Period: {len(quarterly_sales)} quarters of sales data
         
-        **💡 Strategic Recommendations:**
-        • Focus marketing efforts on the leading region ({top_region})
-        • Consider expanding the top-performing category ({top_category})
-        • Monitor the performance concentration in top products
-        • Investigate opportunities in underperforming regions
+        **Strategic Recommendations:**
+        - Focus marketing efforts on the leading region ({top_region})
+        - Consider expanding the top-performing category ({top_category})
+        - Monitor the performance concentration in top products
+        - Investigate opportunities in underperforming regions
         """
         
         return drug_performance, charts, final_insights
@@ -935,12 +935,12 @@ class AnalyticsEngine:
             top_quantity = df[df['drug_name'] == top_drug_name]['quantity_sold'].sum()
             
             answer = f"""
-            **📊 Best Seller Analysis:**
+            **Best Seller Analysis:**
             
             **{top_drug_name}** is our best-selling product with:
-            • **${top_drug_sales:,.2f}** in total sales
-            • **{market_share:.1f}%** market share
-            • **{top_quantity:,}** total units sold
+            - **${top_drug_sales:,.2f}** in total sales
+            - **{market_share:.1f}%** market share
+            - **{top_quantity:,}** total units sold
             
             This represents our strongest performing product across all regions and time periods.
             """
@@ -952,11 +952,11 @@ class AnalyticsEngine:
             worst_drug_sales = worst_drug.iloc[0]
             
             answer = f"""
-            **📉 Lowest Performer Analysis:**
+            **Lowest Performer Analysis:**
             
             **{worst_drug_name}** has the lowest sales with:
-            • **${worst_drug_sales:,.2f}** in total sales
-            • This represents our biggest opportunity for improvement
+            - **${worst_drug_sales:,.2f}** in total sales
+            - This represents our biggest opportunity for improvement
             """
             
         elif any(phrase in query_lower for phrase in ["how much", "total sales", "revenue"]):
@@ -965,11 +965,11 @@ class AnalyticsEngine:
             avg_sale = df['sales_amount'].mean()
             
             answer = f"""
-            **💰 Sales Summary:**
+            **Sales Summary:**
             
-            • **Total Revenue:** ${total_sales:,.2f}
-            • **Total Units Sold:** {total_quantity:,}
-            • **Average Sale Amount:** ${avg_sale:,.2f}
+            - **Total Revenue:** ${total_sales:,.2f}
+            - **Total Units Sold:** {total_quantity:,}
+            - **Average Sale Amount:** ${avg_sale:,.2f}
             """
             
         elif any(phrase in query_lower for phrase in ["how many", "number of"]):
@@ -990,11 +990,11 @@ class AnalyticsEngine:
             top_region_sales = best_region.iloc[0]
             
             answer = f"""
-            **🌍 Top Performing Region:**
+            **Top Performing Region:**
             
             **{top_region_name}** is our best market with:
-            • **${top_region_sales:,.2f}** in total sales
-            • This is our strongest geographical market
+            - **${top_region_sales:,.2f}** in total sales
+            - This is our strongest geographical market
             """
             
         else:
@@ -1006,10 +1006,10 @@ class AnalyticsEngine:
                     drug_sales = drug_data['sales_amount'].sum()
                     drug_quantity = drug_data['quantity_sold'].sum()
                     answer = f"""
-                    **💊 {drug_name} Performance:**
+                    **{drug_name} Performance:**
                     
-                    • **Total Sales:** ${drug_sales:,.2f}
-                    • **Units Sold:** {drug_quantity:,}
+                    - **Total Sales:** ${drug_sales:,.2f}
+                    - **Units Sold:** {drug_quantity:,}
                     """
                 else:
                     answer = f"I couldn't find any sales data for {drug_name}."
@@ -1033,7 +1033,7 @@ def main():
         st.session_state.messages = []
     
     # Title and description
-    st.title("🏥 Healthcare AI Assistant Demo")
+    st.title("Healthcare AI Assistant Demo")
     st.markdown("""
     Welcome to your intelligent healthcare assistant! I can help you with both **casual conversation** 
     and **in-depth sales data analysis**. Just ask me anything naturally.
@@ -1042,32 +1042,32 @@ def main():
     # LLM Status indicator
     if st.session_state.llm.available:
         if st.session_state.llm.demo_mode:
-            st.info("🤖 AI Assistant: Enhanced Demo Mode - Intelligent conversation + data analysis!")
+            st.info("AI Assistant: Enhanced Demo Mode - Intelligent conversation + data analysis!")
         else:
-            st.success("🤖 AI Assistant: Full LLM Integration Active - Advanced conversation capabilities!")
+            st.success("AI Assistant: Full LLM Integration Active - Advanced conversation capabilities!")
     else:
-        st.warning("⚠️ AI Assistant: Limited Mode - Basic responses only")
+        st.warning("AI Assistant: Limited Mode - Basic responses only")
     
     # Sidebar with sample queries
     with st.sidebar:
-        st.header("💬 Try These Questions")
+        st.header("Try These Questions")
         
         st.markdown("""
-        • Show me sales trends for Aspirin
-        • Compare all drug performance
-        • Which is our best selling drug?
-        • What's our total revenue?
-        • Tell me something interesting about our business
+        - Show me sales trends for Aspirin
+        - Compare all drug performance
+        - Which is our best selling drug?
+        - What's our total revenue?
+        - Tell me something interesting about our business
         """)
         
-        st.header("🗃️ Database Info")
+        st.header("Database Info")
         total_sales = st.session_state.db.get_sales_data()
         st.metric("Total Sales Records", len(total_sales))
         st.metric("Total Drugs", len(st.session_state.db.get_drug_info()))
         st.metric("Representatives", len(st.session_state.db.get_representatives()))
     
     # Chat interface
-    st.header("💬 Chat with AI Assistant")
+    st.header("Chat with AI Assistant")
     
     # Display chat messages
     for message_idx, message in enumerate(st.session_state.messages):
