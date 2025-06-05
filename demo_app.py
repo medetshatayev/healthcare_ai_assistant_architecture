@@ -89,17 +89,17 @@ class LLMProcessor:
                 "type": "function",
                 "function": {
                     "name": "analyze_sales_trend",
-                    "description": "Analyze sales trends over time for specific drugs or all drugs",
+                    "description": "Analyze sales trends and performance over time. Use this when users ask about trends, performance, sales data for specific drugs, or want to see how a drug is performing. Also use for simple drug mentions like 'aspirin' or 'aspirin sales'.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "drug_name": {
                                 "type": "string",
-                                "description": "Name of the drug to analyze (optional). Available: Aspirin, Ibuprofen, Medication X, Allergy Relief, Blood Pressure Med, Diabetes Control, Antibiotic Plus, Vitamin D3"
+                                "description": "Name of the drug to analyze. Available drugs: Aspirin, Ibuprofen, Medication X, Allergy Relief, Blood Pressure Med, Diabetes Control, Antibiotic Plus, Vitamin D3. Leave empty for all drugs."
                             },
                             "region": {
                                 "type": "string",
-                                "description": "Region to filter by (optional). Available: North America, Europe, Asia, South America"
+                                "description": "Region to filter analysis by. Available regions: North America, Europe, Asia, South America. Leave empty for all regions."
                             }
                         }
                     }
@@ -109,13 +109,13 @@ class LLMProcessor:
                 "type": "function",
                 "function": {
                     "name": "compare_drugs",
-                    "description": "Compare performance between different drugs",
+                    "description": "Compare performance between multiple drugs. Use when users ask to compare drugs, see which drugs perform better, or want comparative analysis.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "region": {
                                 "type": "string",
-                                "description": "Region to filter comparison by (optional). Available: North America, Europe, Asia, South America"
+                                "description": "Region to filter comparison by. Available regions: North America, Europe, Asia, South America. Leave empty for global comparison."
                             }
                         }
                     }
@@ -125,13 +125,13 @@ class LLMProcessor:
                 "type": "function",
                 "function": {
                     "name": "regional_analysis",
-                    "description": "Analyze sales performance by region",
+                    "description": "Analyze sales performance across different regions. Use when users ask about regional performance, geographic analysis, or how different regions are performing.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "drug_name": {
                                 "type": "string",
-                                "description": "Name of the drug to analyze by region (optional)"
+                                "description": "Name of the drug to analyze by region. Available drugs: Aspirin, Ibuprofen, Medication X, Allergy Relief, Blood Pressure Med, Diabetes Control, Antibiotic Plus, Vitamin D3. Leave empty for all drugs."
                             }
                         }
                     }
@@ -141,7 +141,7 @@ class LLMProcessor:
                 "type": "function",
                 "function": {
                     "name": "generate_auto_insights",
-                    "description": "Generate automatic insights and interesting findings from all available data",
+                    "description": "Generate comprehensive business insights and interesting findings from all available data. Use when users ask for insights, interesting findings, business overview, or general analysis.",
                     "parameters": {
                         "type": "object",
                         "properties": {}
@@ -152,13 +152,13 @@ class LLMProcessor:
                 "type": "function",
                 "function": {
                     "name": "answer_direct_question",
-                    "description": "Answer direct questions about specific data points like 'what is our best seller', 'total revenue', etc.",
+                    "description": "Answer specific direct questions about the business data like 'what is our best seller', 'total revenue', 'worst performer', etc. Use for factual questions that need specific data points.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "question": {
                                 "type": "string",
-                                "description": "The direct question being asked"
+                                "description": "The specific question being asked by the user"
                             }
                         }
                     }
@@ -252,8 +252,10 @@ Try asking something like:
                 "response": f"I'll analyze the sales trends for {detected_drug or 'all drugs'}" + (f" in {detected_region}" if detected_region else "") + "."
             }
         
-        # Comparisons
-        elif any(word in query_lower for word in ["compare", "comparison", "vs", "versus"]):
+        # Comparisons - improved detection
+        elif (any(word in query_lower for word in ["compare", "comparison", "vs", "versus"]) or 
+              ("all drug" in query_lower and "performance" in query_lower) or
+              ("drug performance" in query_lower and "all" in query_lower)):
             return {
                 "type": "function_call",
                 "function_name": "compare_drugs",
@@ -278,6 +280,19 @@ Try asking something like:
                 "function_args": {},
                 "response": "Let me analyze the data and show you some interesting insights about the healthcare business."
             }
+        
+        # Handle standalone drug queries (like "aspirin", "aspirin sales")
+        elif detected_drug and not any(word in query_lower for word in ["hello", "hi", "thanks", "thank you", "goodbye", "bye"]):
+            # For simple drug queries, default to trend analysis
+            if (len(query_lower.split()) <= 3 and 
+                any(phrase in query_lower for phrase in [detected_drug.lower(), "sales", "performance", "data", "info", "information"]) or
+                query_lower.strip() == detected_drug.lower()):
+                return {
+                    "type": "function_call",
+                    "function_name": "analyze_sales_trend",
+                    "function_args": {"drug_name": detected_drug, "region": detected_region},
+                    "response": f"I'll analyze the sales trends for {detected_drug}{' in ' + detected_region if detected_region else ''}."
+                }
         
         # Default conversational response for unclear queries
         else:
@@ -304,41 +319,54 @@ Try asking something like:
             messages = [
                 {
                     "role": "system", 
-                    "content": f"""You are a helpful healthcare AI assistant specializing in pharmaceutical sales data analysis. You can either have a normal conversation with users or help them analyze business data using the available functions.
+                    "content": f"""You are an intelligent healthcare AI assistant specializing in pharmaceutical sales data analysis. You have full access to healthcare sales data and can perform sophisticated analyses using the available functions.
 
-Available data context:
+AVAILABLE DATA:
 {data_context}
 
-CONVERSATION GUIDELINES:
-1. For greetings, general questions, or casual conversation: Respond naturally and helpfully WITHOUT calling any functions
-2. For business/data analysis requests: Use the appropriate function to analyze the data
-3. Be friendly, professional, and concise
-4. IMPORTANT: Use conversation history to understand context and follow-up questions
-5. If a user refers to "that", "it", "the same", or asks for variations (like "show that for Europe"), use context from previous messages
+AVAILABLE DRUGS: Aspirin, Ibuprofen, Medication X, Allergy Relief, Blood Pressure Med, Diabetes Control, Antibiotic Plus, Vitamin D3
+AVAILABLE REGIONS: North America, Europe, Asia, South America
 
-AVAILABLE FUNCTIONS:
-- analyze_sales_trend: For trend analysis over time
-- compare_drugs: For comparing drug performance  
-- regional_analysis: For geographic performance analysis
-- generate_auto_insights: For general insights and interesting findings
-- answer_direct_question: For specific questions like "what's our best seller"
+YOUR CAPABILITIES:
+You can analyze sales trends, compare drug performance, analyze regional data, generate business insights, and answer direct questions about the data.
 
-CONTEXT HANDLING:
-- If user asks for variations of previous analysis (different region, drug, time period), call the same function with updated parameters
-- If user asks "what about [drug]?" after seeing analysis, analyze that specific drug
-- If user says "show that for [region]", use the last analysis type for the specified region
-- Maintain conversation flow and remember what was previously discussed"""
+FUNCTION CALLING GUIDELINES:
+1. ALWAYS use functions for data analysis requests - never try to answer data questions without calling functions
+2. For casual conversation, greetings, or general questions: respond conversationally WITHOUT calling functions
+3. Use conversation context intelligently to understand follow-up questions and references
+
+CONTEXT UNDERSTANDING EXAMPLES:
+- User asks "Which is our best seller?" → Use answer_direct_question
+- User follows up with "what about aspirin?" → Use analyze_sales_trend for Aspirin (understanding they want Aspirin analysis)
+- User says "show that for Europe" → Apply Europe filter to the previous analysis type
+- User mentions just "aspirin" or "aspirin sales" → Use analyze_sales_trend for Aspirin
+- User asks "compare them" after drug discussion → Use compare_drugs
+- User asks about "trends" or "performance" → Use analyze_sales_trend
+- User asks for "insights" or "interesting findings" → Use generate_auto_insights
+- User asks about "regions" or "geography" → Use regional_analysis
+
+IMPORTANT: 
+- Understand the full context of the conversation
+- Don't just look for keywords - understand the user's intent
+- When users reference previous analysis or ask follow-up questions, maintain context
+- Be intelligent about parameter selection based on conversation flow
+- Always provide helpful, brief responses when calling functions"""
                 }
             ]
             
-            # Add conversation history
+            # Add conversation history - keep more context for better understanding
             if conversation_history:
-                # Add recent conversation context (last 6 messages to avoid token limits)
-                recent_history = conversation_history[-6:] if len(conversation_history) > 6 else conversation_history
+                # Add recent conversation context (last 8 messages for better context)
+                recent_history = conversation_history[-8:] if len(conversation_history) > 8 else conversation_history
                 for msg in recent_history:
+                    # Keep more content for better context understanding
+                    content = msg["content"]
+                    if len(content) > 800:
+                        # For very long messages, keep the beginning and summary
+                        content = content[:400] + "\n...[analysis results]...\n" + content[-200:]
                     messages.append({
                         "role": msg["role"],
-                        "content": msg["content"][:500] + "..." if len(msg["content"]) > 500 else msg["content"]  # Truncate long messages
+                        "content": content
                     })
             
             # Add current query
@@ -414,33 +442,35 @@ CONTEXT HANDLING:
                     last_drug = "Aspirin"
                 elif "ibuprofen" in content.lower():
                     last_drug = "Ibuprofen"
+                elif "medication x" in content.lower():
+                    last_drug = "Medication X"
                 # Add more drug extractions as needed
                 
                 break
         
-        # Handle contextual follow-up queries
-        if last_function_call and any(phrase in query_lower for phrase in [
-            "what about", "show that for", "for the same", "but for", "in europe", "in asia", "in north america", "in south america",
-            "show me that", "do the same", "similar analysis", "same thing"
-        ]):
-            
-            # Extract new parameters from the query
-            drugs = ["aspirin", "ibuprofen", "medication x", "allergy relief", 
-                    "blood pressure med", "diabetes control", "antibiotic plus", "vitamin d3"]
-            regions = ["north america", "europe", "asia", "south america"]
-            
-            new_drug = None
-            new_region = None
-            
-            for drug in drugs:
-                if drug in query_lower:
-                    new_drug = drug.title()
-                    break
-                    
-            for region in regions:
-                if region in query_lower:
-                    new_region = region.title()
-                    break
+        # Define drugs and regions for detection
+        drugs = ["aspirin", "ibuprofen", "medication x", "allergy relief", 
+                "blood pressure med", "diabetes control", "antibiotic plus", "vitamin d3"]
+        regions = ["north america", "europe", "asia", "south america"]
+        
+        # Detect drug and region in current query
+        detected_drug = None
+        detected_region = None
+        
+        for drug in drugs:
+            if drug in query_lower:
+                detected_drug = drug.title()
+                break
+                
+        for region in regions:
+            if region in query_lower:
+                detected_region = region.title()
+                break
+        
+        # Handle explicit contextual follow-up queries
+        if last_function_call and (any(phrase in query_lower for phrase in [
+            "what about", "show that for", "for the same", "but for", "show me that", "do the same", "similar analysis", "same thing"
+        ]) or (detected_region and any(phrase in query_lower for phrase in ["show", "that", "for"]))):
             
             # Use previous analysis type with new parameters
             if last_function_call == "analyze_sales_trend":
@@ -448,27 +478,107 @@ CONTEXT HANDLING:
                     "type": "function_call",
                     "function_name": "analyze_sales_trend",
                     "function_args": {
-                        "drug_name": new_drug or last_drug,
-                        "region": new_region or last_region
+                        "drug_name": detected_drug or last_drug,
+                        "region": detected_region or last_region
                     },
-                    "response": f"I'll show you the sales trend analysis{' for ' + (new_drug or last_drug) if (new_drug or last_drug) else ''}{' in ' + new_region if new_region else ''}."
+                    "response": f"I'll show you the sales trend analysis{' for ' + (detected_drug or last_drug) if (detected_drug or last_drug) else ''}{' in ' + detected_region if detected_region else ''}."
                 }
             elif last_function_call == "compare_drugs":
                 return {
                     "type": "function_call",
                     "function_name": "compare_drugs",
-                    "function_args": {"region": new_region or last_region},
-                    "response": f"I'll compare drug performance{' in ' + new_region if new_region else ''}."
+                    "function_args": {"region": detected_region or last_region},
+                    "response": f"I'll compare drug performance{' in ' + detected_region if detected_region else ''}."
                 }
             elif last_function_call == "regional_analysis":
                 return {
                     "type": "function_call",
                     "function_name": "regional_analysis",
-                    "function_args": {"drug_name": new_drug or last_drug},
-                    "response": f"I'll analyze regional performance{' for ' + (new_drug or last_drug) if (new_drug or last_drug) else ''}."
+                    "function_args": {"drug_name": detected_drug or last_drug},
+                    "response": f"I'll analyze regional performance{' for ' + (detected_drug or last_drug) if (detected_drug or last_drug) else ''}."
+                }
+        
+        # Handle standalone drug queries with context
+        if detected_drug and not any(word in query_lower for word in ["hello", "hi", "thanks", "thank you"]):
+            # For drug queries, default to trend analysis unless it's explicitly a direct question
+            if (len(query_lower.split()) <= 3 and 
+                any(phrase in query_lower for phrase in [detected_drug.lower(), "sales", "performance", "data", "info", "information", "trends", "trend"]) or
+                query_lower.strip() == detected_drug.lower()):
+                
+                # Default to trend analysis for drug queries (this is what users typically want)
+                return {
+                    "type": "function_call",
+                    "function_name": "analyze_sales_trend",
+                    "function_args": {"drug_name": detected_drug, "region": detected_region},
+                    "response": f"I'll analyze the sales trends for {detected_drug}{' in ' + detected_region if detected_region else ''}."
+                }
+        
+        # Handle regional queries with context
+        if detected_region and not detected_drug and last_function_call:
+            if last_function_call == "analyze_sales_trend" and last_drug:
+                return {
+                    "type": "function_call",
+                    "function_name": "analyze_sales_trend",
+                    "function_args": {"drug_name": last_drug, "region": detected_region},
+                    "response": f"I'll show you the sales trend for {last_drug} in {detected_region}."
+                }
+            elif last_function_call == "compare_drugs":
+                return {
+                    "type": "function_call", 
+                    "function_name": "compare_drugs",
+                    "function_args": {"region": detected_region},
+                    "response": f"I'll compare drug performance in {detected_region}."
                 }
         
         # Standard processing if no context match
+        return self._demo_function_calling_enhanced(query)
+
+    def _demo_function_calling_enhanced(self, query: str) -> Dict:
+        """Enhanced demo function calling with better keyword detection"""
+        query_lower = query.lower()
+        
+        # Detect drug and region
+        drugs = ["aspirin", "ibuprofen", "medication x", "allergy relief", 
+                "blood pressure med", "diabetes control", "antibiotic plus", "vitamin d3"]
+        regions = ["north america", "europe", "asia", "south america"]
+        
+        detected_drug = None
+        detected_region = None
+        
+        for drug in drugs:
+            if drug in query_lower:
+                detected_drug = drug.title()
+                break
+                
+        for region in regions:
+            if region in query_lower:
+                detected_region = region.title()
+                break
+        
+        # Enhanced comparison detection
+        if (any(word in query_lower for word in ["compare", "comparison", "vs", "versus"]) or 
+            ("all drug" in query_lower and "performance" in query_lower) or
+            ("drug performance" in query_lower and "all" in query_lower) or
+            ("compare all" in query_lower)):
+            return {
+                "type": "function_call",
+                "function_name": "compare_drugs",
+                "function_args": {"region": detected_region},
+                "response": "I'll compare the drug performance data for you."
+            }
+        
+        # Enhanced trend analysis detection (including drug sales queries)
+        elif (detected_drug or 
+              any(word in query_lower for word in ["trend", "trends", "sales", "performance"]) or
+              "show me sales" in query_lower):
+            return {
+                "type": "function_call",
+                "function_name": "analyze_sales_trend",
+                "function_args": {"drug_name": detected_drug, "region": detected_region},
+                "response": f"I'll analyze the sales trends{' for ' + detected_drug if detected_drug else ''}{' in ' + detected_region if detected_region else ''}."
+            }
+        
+        # Fallback to original function
         return self._demo_function_calling(query)
 
 class HealthcareDatabase:
