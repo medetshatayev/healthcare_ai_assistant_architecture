@@ -47,11 +47,10 @@ class LLMProcessor:
             if os.getenv("DEMO_MODE", "false").lower() == "true":
                 self.demo_mode = True
                 self.available = True
-                print("LLM initialized in DEMO MODE (enhanced rule-based responses)")
+                print("Initialized in enhanced rule-based mode")
                 return
             
             # Get configuration from environment
-            base_url = os.getenv("OPENAI_BASE_URL")
             api_key = os.getenv("OPENAI_API_KEY")
             
             if not api_key:
@@ -61,20 +60,23 @@ class LLMProcessor:
                 return
             
             # Initialize OpenAI client
-            if base_url:
-                self.client = OpenAI(base_url=base_url, api_key=api_key)
-            else:
-                self.client = OpenAI(api_key=api_key)
+            self.client = OpenAI(api_key=api_key)
                 
-            # Test the connection
-            test_response = self.client.chat.completions.create(
-                model="kaz-22a",
-                messages=[{"role": "user", "content": "Hello"}],
-                max_tokens=5
-            )
+            # Test the connection with a more standard model
+            model_name = os.getenv("OPENAI_MODEL")
+            try:
+                test_response = self.client.chat.completions.create(
+                    model=model_name,
+                    messages=[{"role": "user", "content": "Hello"}],
+                    max_tokens=5
+                )
+                print(f"LLM initialized successfully with API using model: {model_name}")
+            except Exception as model_error:
+                # If the default model fails, try with a basic model or skip test
+                print(f"WARNING: Test with model '{model_name}' failed: {model_error}")
+                print("LLM client initialized but model compatibility not verified")
             
             self.available = True
-            print("LLM initialized successfully with API")
             
         except Exception as e:
             print(f"WARNING: LLM API initialization failed: {e}")
@@ -100,6 +102,18 @@ class LLMProcessor:
                             "region": {
                                 "type": "string",
                                 "description": "Region to filter analysis by. Available regions: North America, Europe, Asia, South America. Leave empty for all regions."
+                            },
+                            "days_back": {
+                                "type": "integer",
+                                "description": "Number of days to look back from today. Use 14 for 'last 2 weeks', 30 for 'last month', 90 for 'last quarter', etc. Leave empty for all available data."
+                            },
+                            "start_date": {
+                                "type": "string",
+                                "description": "Start date for analysis in YYYY-MM-DD format. Leave empty to use days_back or all data."
+                            },
+                            "end_date": {
+                                "type": "string",
+                                "description": "End date for analysis in YYYY-MM-DD format. Leave empty to use current date."
                             }
                         }
                     }
@@ -109,13 +123,22 @@ class LLMProcessor:
                 "type": "function",
                 "function": {
                     "name": "compare_drugs",
-                    "description": "Compare performance between multiple drugs. Use when users ask to compare drugs, see which drugs perform better, or want comparative analysis.",
+                    "description": "Compare performance between multiple drugs. Use when users ask to compare drugs, see which drugs perform better, or want comparative analysis. Can compare specific drugs or all drugs.",
                     "parameters": {
                         "type": "object",
                         "properties": {
+                            "drug_names": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of specific drug names to compare. Available drugs: Aspirin, Ibuprofen, Medication X, Allergy Relief, Blood Pressure Med, Diabetes Control, Antibiotic Plus, Vitamin D3. Leave empty to compare all drugs."
+                            },
                             "region": {
                                 "type": "string",
                                 "description": "Region to filter comparison by. Available regions: North America, Europe, Asia, South America. Leave empty for global comparison."
+                            },
+                            "days_back": {
+                                "type": "integer",
+                                "description": "Number of days to look back from today. Use 14 for 'last 2 weeks', 30 for 'last month', etc. Leave empty for all available data."
                             }
                         }
                     }
@@ -132,6 +155,10 @@ class LLMProcessor:
                             "drug_name": {
                                 "type": "string",
                                 "description": "Name of the drug to analyze by region. Available drugs: Aspirin, Ibuprofen, Medication X, Allergy Relief, Blood Pressure Med, Diabetes Control, Antibiotic Plus, Vitamin D3. Leave empty for all drugs."
+                            },
+                            "days_back": {
+                                "type": "integer",
+                                "description": "Number of days to look back from today. Use 14 for 'last 2 weeks', 30 for 'last month', etc. Leave empty for all available data."
                             }
                         }
                     }
@@ -220,12 +247,17 @@ Try asking something like:
         regions = ["north america", "europe", "asia", "south america"]
         
         detected_drug = None
+        detected_drugs = []
         detected_region = None
         
+        # Detect multiple drugs for comparison queries
         for drug in drugs:
             if drug in query_lower:
-                detected_drug = drug.title()
-                break
+                detected_drugs.append(drug.title())
+        
+        # Set single drug for backward compatibility
+        if detected_drugs:
+            detected_drug = detected_drugs[0]
                 
         for region in regions:
             if region in query_lower:
@@ -256,11 +288,17 @@ Try asking something like:
         elif (any(word in query_lower for word in ["compare", "comparison", "vs", "versus"]) or 
               ("all drug" in query_lower and "performance" in query_lower) or
               ("drug performance" in query_lower and "all" in query_lower)):
+            
+            # Include specific drugs if multiple were detected
+            compare_args = {"region": detected_region}
+            if len(detected_drugs) > 1:
+                compare_args["drug_names"] = detected_drugs
+            
             return {
                 "type": "function_call",
                 "function_name": "compare_drugs",
-                "function_args": {"region": detected_region},
-                "response": "I'll compare the drug performance data for you."
+                "function_args": compare_args,
+                "response": f"I'll compare the drug performance data{' for ' + ' and '.join(detected_drugs) if len(detected_drugs) > 1 else ''} for you."
             }
         
         # Regional analysis
@@ -332,23 +370,27 @@ You can analyze sales trends, compare drug performance, analyze regional data, g
 
 FUNCTION CALLING GUIDELINES:
 1. ALWAYS use functions for data analysis requests - never try to answer data questions without calling functions
-2. For casual conversation, greetings, or general questions: respond conversationally WITHOUT calling functions
+2. For casual conversation, greetings, explanatory questions, or general questions: respond conversationally WITHOUT calling functions
 3. Use conversation context intelligently to understand follow-up questions and references
+4. EXTRACT ALL RELEVANT PARAMETERS from user queries - don't leave parameters empty if they can be determined
+
+PARAMETER EXTRACTION RULES:
+- TIME PERIODS: "last 2 weeks" → days_back: 14, "last month" → days_back: 30, "last quarter" → days_back: 90
+- DRUG NAMES: Extract specific drugs mentioned: "medication x with ibuprofen" → drug_names: ["Medication X", "Ibuprofen"]
+- REGIONS: Extract region names: "in Europe" → region: "Europe"
+- ALWAYS fill in parameters when information is available in the query
 
 CONTEXT UNDERSTANDING EXAMPLES:
-- User asks "Which is our best seller?" → Use answer_direct_question
-- User follows up with "what about aspirin?" → Use analyze_sales_trend for Aspirin (understanding they want Aspirin analysis)
-- User says "show that for Europe" → Apply Europe filter to the previous analysis type
-- User mentions just "aspirin" or "aspirin sales" → Use analyze_sales_trend for Aspirin
-- User asks "compare them" after drug discussion → Use compare_drugs
-- User asks about "trends" or "performance" → Use analyze_sales_trend
-- User asks for "insights" or "interesting findings" → Use generate_auto_insights
-- User asks about "regions" or "geography" → Use regional_analysis
+- User asks "Which is our best seller?" → Use answer_direct_question with question parameter
+- User asks "all sales for last 2 weeks" → Use analyze_sales_trend with days_back: 14
+- User asks "Compare medication x with ibuprofen" → Use compare_drugs with drug_names: ["Medication X", "Ibuprofen"]
+- User asks "why low" after data analysis → Respond conversationally, explain the data shown
+- User mentions just "aspirin sales" → Use analyze_sales_trend with drug_name: "Aspirin"
 
 IMPORTANT: 
+- Extract specific parameters from user queries - don't use empty objects {{}}
 - Understand the full context of the conversation
-- Don't just look for keywords - understand the user's intent
-- When users reference previous analysis or ask follow-up questions, maintain context
+- When users ask explanatory questions about shown data, respond conversationally
 - Be intelligent about parameter selection based on conversation flow
 - Always provide helpful, brief responses when calling functions"""
                 }
@@ -372,7 +414,8 @@ IMPORTANT:
             # Add current query
             messages.append({"role": "user", "content": query})
 
-            model_name = "kaz-22a"
+            # Use configurable model name
+            model_name = os.getenv("OPENAI_MODEL")
 
             response = self.client.chat.completions.create(
                 model=model_name,
@@ -537,6 +580,15 @@ IMPORTANT:
         """Enhanced demo function calling with better keyword detection"""
         query_lower = query.lower()
         
+        # Handle conversational queries that should not trigger functions
+        if (any(phrase in query_lower for phrase in ["why", "how come", "what happened", "explain"]) and 
+            any(word in query_lower for word in ["low", "high", "down", "up", "poor", "good", "bad"]) and
+            len(query_lower.split()) <= 5):
+            return {
+                "type": "conversational",
+                "response": "Based on the data analysis shown, the trends could be influenced by various factors such as market conditions, seasonal patterns, competition, or changes in demand. The specific numbers reflect the actual sales performance during the analyzed time period."
+            }
+        
         # Detect drug and region
         drugs = ["aspirin", "ibuprofen", "medication x", "allergy relief", 
                 "blood pressure med", "diabetes control", "antibiotic plus", "vitamin d3"]
@@ -555,27 +607,65 @@ IMPORTANT:
                 detected_region = region.title()
                 break
         
-        # Enhanced comparison detection
+        # Enhanced comparison detection with drug extraction
         if (any(word in query_lower for word in ["compare", "comparison", "vs", "versus"]) or 
             ("all drug" in query_lower and "performance" in query_lower) or
             ("drug performance" in query_lower and "all" in query_lower) or
             ("compare all" in query_lower)):
+            
+            # Extract specific drugs mentioned for comparison
+            drug_names = []
+            for drug in drugs:
+                if drug in query_lower:
+                    drug_names.append(drug.title())
+            
+            # Handle time periods
+            days_back = None
+            if "last 2 weeks" in query_lower or "2 weeks" in query_lower:
+                days_back = 14
+            elif "last month" in query_lower or "last 30 days" in query_lower:
+                days_back = 30
+            elif "last quarter" in query_lower or "last 90 days" in query_lower:
+                days_back = 90
+            
+            args = {"region": detected_region}
+            if drug_names:
+                args["drug_names"] = drug_names
+            if days_back:
+                args["days_back"] = days_back
+                
             return {
                 "type": "function_call",
                 "function_name": "compare_drugs",
-                "function_args": {"region": detected_region},
-                "response": "I'll compare the drug performance data for you."
+                "function_args": args,
+                "response": f"I'll compare {'the specified drugs' if drug_names else 'drug performance'}{' in ' + detected_region if detected_region else ''}{' for the last ' + str(days_back) + ' days' if days_back else ''}."
             }
         
-        # Enhanced trend analysis detection (including drug sales queries)
+        # Enhanced trend analysis detection with time period extraction
         elif (detected_drug or 
               any(word in query_lower for word in ["trend", "trends", "sales", "performance"]) or
               "show me sales" in query_lower):
+            
+            # Handle time periods
+            days_back = None
+            if "last 2 weeks" in query_lower or "2 weeks" in query_lower:
+                days_back = 14
+            elif "last month" in query_lower or "last 30 days" in query_lower:
+                days_back = 30
+            elif "last quarter" in query_lower or "last 90 days" in query_lower:
+                days_back = 90
+            elif "last week" in query_lower or "7 days" in query_lower:
+                days_back = 7
+                
+            args = {"drug_name": detected_drug, "region": detected_region}
+            if days_back:
+                args["days_back"] = days_back
+                
             return {
                 "type": "function_call",
                 "function_name": "analyze_sales_trend",
-                "function_args": {"drug_name": detected_drug, "region": detected_region},
-                "response": f"I'll analyze the sales trends{' for ' + detected_drug if detected_drug else ''}{' in ' + detected_region if detected_region else ''}."
+                "function_args": args,
+                "response": f"I'll analyze the sales trends{' for ' + detected_drug if detected_drug else ''}{' in ' + detected_region if detected_region else ''}{' for the last ' + str(days_back) + ' days' if days_back else ''}."
             }
         
         # Fallback to original function
@@ -700,7 +790,7 @@ class HealthcareDatabase:
         
         self.conn.commit()
     
-    def get_sales_data(self, drug_name=None, region=None, start_date=None, end_date=None):
+    def get_sales_data(self, drug_name=None, region=None, start_date=None, end_date=None, days_back=None):
         """Retrieve sales data with optional filters"""
         query = "SELECT * FROM sales_data WHERE 1=1"
         params = []
@@ -713,6 +803,10 @@ class HealthcareDatabase:
             query += " AND region = ?"
             params.append(region)
         
+        # Handle days_back parameter
+        if days_back and not start_date:
+            start_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
+        
         if start_date:
             query += " AND sale_date >= ?"
             params.append(start_date)
@@ -720,6 +814,9 @@ class HealthcareDatabase:
         if end_date:
             query += " AND sale_date <= ?"
             params.append(end_date)
+        elif days_back:  # If using days_back, set end date to today
+            query += " AND sale_date <= ?"
+            params.append(datetime.now().strftime('%Y-%m-%d'))
         
         return pd.read_sql_query(query, self.conn, params=params)
     
@@ -780,66 +877,129 @@ class AnalyticsEngine:
         """Analyze sales trends"""
         drug_name = entities.get('drug_name')
         region = entities.get('region')
+        days_back = entities.get('days_back')
+        start_date = entities.get('start_date')
+        end_date = entities.get('end_date')
         
         # Get sales data
-        df = self.db.get_sales_data(drug_name=drug_name, region=region)
+        df = self.db.get_sales_data(drug_name=drug_name, region=region, 
+                                   start_date=start_date, end_date=end_date, days_back=days_back)
         
         if df.empty:
             return df, [], "No data found for the specified criteria."
         
         # Prepare data for trend analysis
         df['sale_date'] = pd.to_datetime(df['sale_date'])
-        df['month_year'] = df['sale_date'].dt.to_period('M')
         
-        # Group by month and calculate totals
-        monthly_sales = df.groupby('month_year').agg({
+        # Determine appropriate time grouping based on the analysis period
+        date_range_days = (df['sale_date'].max() - df['sale_date'].min()).days
+        
+        # Choose grouping strategy based on data span
+        if days_back and days_back <= 30:
+            # For short periods (≤30 days), group by day
+            df['time_period'] = df['sale_date'].dt.date
+            time_label = 'Date'
+            period_type = 'daily'
+        elif days_back and days_back <= 90:
+            # For medium periods (≤90 days), group by week
+            df['time_period'] = df['sale_date'].dt.to_period('W')
+            time_label = 'Week'
+            period_type = 'weekly'
+        else:
+            # For longer periods or no specific days_back, group by month
+            df['time_period'] = df['sale_date'].dt.to_period('M')
+            time_label = 'Month'
+            period_type = 'monthly'
+        
+        # Group by time period and calculate totals
+        time_sales = df.groupby('time_period').agg({
             'sales_amount': 'sum',
             'quantity_sold': 'sum'
         }).reset_index()
         
-        monthly_sales['month_year_str'] = monthly_sales['month_year'].astype(str)
+        time_sales['time_period_str'] = time_sales['time_period'].astype(str)
         
         # Create visualizations
         charts = []
         
         # Sales trend line chart
-        fig1 = px.line(monthly_sales, x='month_year_str', y='sales_amount',
+        fig1 = px.line(time_sales, x='time_period_str', y='sales_amount',
                       title=f'Sales Trend Over Time{f" - {drug_name}" if drug_name else ""}{f" ({region})" if region else ""}',
-                      labels={'month_year_str': 'Month', 'sales_amount': 'Sales Amount ($)'})
+                      labels={'time_period_str': time_label, 'sales_amount': 'Sales Amount ($)'})
         fig1.update_layout(xaxis_tickangle=-45)
         charts.append(fig1)
         
         # Quantity trend bar chart
-        fig2 = px.bar(monthly_sales, x='month_year_str', y='quantity_sold',
+        fig2 = px.bar(time_sales, x='time_period_str', y='quantity_sold',
                      title=f'Quantity Sold Over Time{f" - {drug_name}" if drug_name else ""}{f" ({region})" if region else ""}',
-                     labels={'month_year_str': 'Month', 'quantity_sold': 'Quantity Sold'})
+                     labels={'time_period_str': time_label, 'quantity_sold': 'Quantity Sold'})
         fig2.update_layout(xaxis_tickangle=-45)
         charts.append(fig2)
         
         # Generate insights
-        total_sales = monthly_sales['sales_amount'].sum()
-        avg_monthly_sales = monthly_sales['sales_amount'].mean()
-        total_quantity = monthly_sales['quantity_sold'].sum()
+        total_sales = time_sales['sales_amount'].sum()
+        total_quantity = time_sales['quantity_sold'].sum()
+        
+        # Calculate appropriate average and period description
+        if period_type == 'daily':
+            avg_period_sales = time_sales['sales_amount'].mean()
+            avg_label = 'Average Daily Sales'
+            if days_back:
+                period_label = f"data found on {len(time_sales)} days (searched last {days_back} days)"
+            else:
+                period_label = f"{len(time_sales)} days"
+        elif period_type == 'weekly':
+            avg_period_sales = time_sales['sales_amount'].mean()
+            avg_label = 'Average Weekly Sales'
+            if days_back:
+                period_label = f"data found in {len(time_sales)} weeks (searched last {days_back} days)"
+            else:
+                period_label = f"{len(time_sales)} weeks"
+        else:
+            avg_period_sales = time_sales['sales_amount'].mean()
+            avg_label = 'Average Monthly Sales'
+            period_label = f"{len(time_sales)} months"
+        
+        # Create time period description
+        time_desc = ""
+        if days_back:
+            time_desc = f" (Last {days_back} days)"
+        elif start_date or end_date:
+            time_desc = f" ({start_date or 'Start'} to {end_date or 'Today'})"
+        
+        # Determine trend direction
+        trend_desc = "single period data"
+        if len(time_sales) > 1:
+            if time_sales['sales_amount'].iloc[-1] > time_sales['sales_amount'].iloc[0]:
+                trend_desc = "positive growth trend"
+            else:
+                trend_desc = "declining trend"
         
         insights = f"""
-        **Sales Trend Analysis Results:**
+        **Sales Trend Analysis Results{time_desc}:**
         
         - Total Sales: ${total_sales:,.2f}
-        - Average Monthly Sales: ${avg_monthly_sales:,.2f}
+        - {avg_label}: ${avg_period_sales:,.2f}
         - Total Quantity Sold: {total_quantity:,} units
-        - Analysis Period: {len(monthly_sales)} months
+        - Analysis Period: {period_label}
         
-        The data shows {"positive growth" if monthly_sales['sales_amount'].iloc[-1] > monthly_sales['sales_amount'].iloc[0] else "declining trend"} in sales over the analyzed period.
+        The data shows {trend_desc} in sales over the analyzed period.
         """
         
-        return monthly_sales, charts, insights
+        return time_sales, charts, insights
     
     def compare_drugs(self, entities: Dict) -> Tuple[pd.DataFrame, List, str]:
         """Compare drug performance"""
+        drug_names = entities.get('drug_names', [])
         region = entities.get('region')
+        days_back = entities.get('days_back')
         
-        # Get sales data for all drugs
-        df = self.db.get_sales_data(region=region)
+        # Get sales data
+        df = self.db.get_sales_data(region=region, days_back=days_back)
+        
+        # Filter by specific drugs if requested
+        if drug_names:
+            df = df[df['drug_name'].isin(drug_names)]
         
         if df.empty:
             return df, [], "No data found for comparison."
@@ -866,8 +1026,11 @@ class AnalyticsEngine:
         
         # Generate insights
         top_drug = drug_comparison.iloc[0]
+        time_desc = f" (Last {days_back} days)" if days_back else ""
+        drug_desc = f" for {', '.join(drug_names)}" if drug_names else ""
+        
         insights = f"""
-        **Drug Comparison Analysis:**
+        **Drug Comparison Analysis{drug_desc}{time_desc}:**
         
         - Top Performing Drug: {top_drug['drug_name']} (${top_drug['sales_amount']:,.2f})
         - Total Drugs Analyzed: {len(drug_comparison)}
@@ -881,8 +1044,9 @@ class AnalyticsEngine:
     def regional_analysis(self, entities: Dict) -> Tuple[pd.DataFrame, List, str]:
         """Analyze performance by region"""
         drug_name = entities.get('drug_name')
+        days_back = entities.get('days_back')
         
-        df = self.db.get_sales_data(drug_name=drug_name)
+        df = self.db.get_sales_data(drug_name=drug_name, days_back=days_back)
         
         if df.empty:
             return df, [], "No data found for regional analysis."
@@ -1033,7 +1197,7 @@ class AnalyticsEngine:
             return df, [], "I don't have any sales data available to answer your question."
         
         # Question type detection and answering
-        if any(phrase in query_lower for phrase in ["best seller", "top performer", "highest sales", "which is our best"]):
+        if any(phrase in query_lower for phrase in ["best seller", "best selling", "top performer", "highest sales", "top selling", "which is our best", "what is our best", "best drug", "top drug"]):
             # Find best selling drug
             best_drug = df.groupby('drug_name')['sales_amount'].sum().sort_values(ascending=False)
             top_drug_name = best_drug.index[0]

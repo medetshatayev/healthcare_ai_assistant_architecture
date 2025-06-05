@@ -118,7 +118,7 @@ class AnalyticsPlugin:
     def generate_chart(self, data: DataFrame, chart_type: str) -> Chart: pass
 ```
 
-### 3. Data Integration Layer 🔌
+### 3. Data Integration Layer
 **Role:** Clean interface to existing systems
 
 **Components:**
